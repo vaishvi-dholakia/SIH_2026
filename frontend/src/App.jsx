@@ -142,7 +142,10 @@ export default function App() {
     if (filterClass === 'ALL') return true;
     if (filterClass === 'INCIDENT') return h.classification === 'Potential Industrial Incident';
     if (filterClass === 'FLARE') return h.classification === 'Potential Industrial Thermal Source';
-    if (filterClass === 'BIOMASS') return h.classification === 'Non-Industrial Fire';
+    if (filterClass === 'FOREST') return h.classification === 'Forest Fire / Wildfire';
+    if (filterClass === 'FARM') return h.classification === 'Agricultural / Stubble Burning';
+    if (filterClass === 'MINE') return h.classification === 'Mining Area / Coal Mine Fire';
+    if (filterClass === 'URBAN') return h.classification === 'Urban / Landfill Fire';
     return true;
   });
 

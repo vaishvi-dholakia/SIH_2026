@@ -21,6 +21,9 @@ FEATURE_NAMES = [
     "confidence",
     "distance_to_refinery_m",
     "distance_to_population_m",
+    "distance_to_forest_m",
+    "distance_to_farmland_m",
+    "distance_to_mining_m",
     "persistence_days",
     "ndvi",
     "anomaly_score"
@@ -29,7 +32,10 @@ FEATURE_NAMES = [
 CLASSES = [
     "Potential Industrial Incident",
     "Potential Industrial Thermal Source",
-    "Non-Industrial Fire"
+    "Forest Fire / Wildfire",
+    "Agricultural / Stubble Burning",
+    "Mining Area / Coal Mine Fire",
+    "Urban / Landfill Fire"
 ]
 
 class DualModelClassifier:
@@ -118,7 +124,12 @@ class DualModelClassifier:
         confidence: float,
         distance_to_refinery_m: float,
         distance_to_population_m: float,
+        distance_to_forest_m: float,
+        distance_to_farmland_m: float,
+        distance_to_mining_m: float,
+        distance_to_landfill_m: float,
         persistence_days: int,
+        ndvi: Optional[float],
         is_suppressed: bool,
         anomaly_score: float
     ) -> Tuple[str, float]:
@@ -128,25 +139,44 @@ class DualModelClassifier:
         """
         logger.warning("Using rule-based classification — insufficient real data to train RandomForest yet")
 
-        # 1. Inside or immediate vicinity of refinery
-        if distance_to_refinery_m <= 1500.0:
-            if is_suppressed:
+        # 1. Industrial Zone (Refinery)
+        if distance_to_refinery_m <= 1000.0:
+            if persistence_days > 15:
                 return "Potential Industrial Thermal Source", 0.92
-            elif frp > 100.0 or anomaly_score > 0.65:
+            elif frp > 100.0 or anomaly_score > 0.65 or persistence_days <= 2:
                 return "Potential Industrial Incident", 0.95
             else:
                 return "Potential Industrial Thermal Source", 0.85
         
-        # 2. Distant from refinery (> 3000m)
-        elif distance_to_refinery_m > 3000.0:
-            return "Non-Industrial Fire", 0.90
-        
-        # 3. Intermediate buffer zone
-        else:
-            if frp > 120.0 or anomaly_score > 0.7:
-                return "Potential Industrial Incident", 0.80
+        # 2. Forest Fire
+        if distance_to_forest_m <= 100.0:
+            if ndvi is not None and ndvi > 0.45:
+                return "Forest Fire / Wildfire", 0.90
+            elif ndvi is None:
+                return "Forest Fire / Wildfire", 0.70
+
+        # 3. Agricultural Fire
+        if distance_to_farmland_m <= 100.0:
+            if ndvi is not None and 0.1 <= ndvi <= 0.25:
+                return "Agricultural / Stubble Burning", 0.90
+            elif ndvi is None:
+                return "Agricultural / Stubble Burning", 0.70
+
+        # 4. Mining Fire
+        if distance_to_mining_m <= 100.0:
+            if persistence_days > 5:
+                return "Mining Area / Coal Mine Fire", 0.85
             else:
-                return "Potential Industrial Thermal Source", 0.75
+                return "Mining Area / Coal Mine Fire", 0.70
+
+        # 5. Urban / Landfill Fire
+        if distance_to_landfill_m <= 100.0 or distance_to_population_m <= 500.0:
+            return "Urban / Landfill Fire", 0.85
+
+        # Fallback
+        if frp > 120.0 or anomaly_score > 0.7:
+            return "Potential Industrial Incident", 0.60
+        return "Unknown", 0.50
 
     def predict(
         self,
@@ -155,6 +185,10 @@ class DualModelClassifier:
         confidence: float,
         distance_to_refinery_m: float,
         distance_to_population_m: float,
+        distance_to_forest_m: float,
+        distance_to_farmland_m: float,
+        distance_to_mining_m: float,
+        distance_to_landfill_m: float,
         persistence_days: int,
         ndvi: Optional[float],
         is_suppressed: bool,
@@ -176,7 +210,9 @@ class DualModelClassifier:
             label, conf = self.classify_rule_based(
                 brightness, frp, confidence,
                 distance_to_refinery_m, distance_to_population_m,
-                persistence_days, is_suppressed, anomaly_score
+                distance_to_forest_m, distance_to_farmland_m,
+                distance_to_mining_m, distance_to_landfill_m,
+                persistence_days, ndvi, is_suppressed, anomaly_score
             )
             return label, conf, anomaly_score
 
@@ -189,6 +225,9 @@ class DualModelClassifier:
             confidence,
             distance_to_refinery_m,
             distance_to_population_m,
+            distance_to_forest_m,
+            distance_to_farmland_m,
+            distance_to_mining_m,
             persistence_days,
             runtime_ndvi,
             anomaly_score
@@ -205,7 +244,9 @@ class DualModelClassifier:
             label, conf = self.classify_rule_based(
                 brightness, frp, confidence,
                 distance_to_refinery_m, distance_to_population_m,
-                persistence_days, is_suppressed, anomaly_score
+                distance_to_forest_m, distance_to_farmland_m,
+                distance_to_mining_m, distance_to_landfill_m,
+                persistence_days, ndvi, is_suppressed, anomaly_score
             )
             return label, conf, anomaly_score
 
@@ -333,7 +374,10 @@ class DualModelClassifier:
         class_map = {
             "Potential Industrial Incident": 0,
             "Potential Industrial Thermal Source": 1,
-            "Non-Industrial Fire": 2
+            "Forest Fire / Wildfire": 2,
+            "Agricultural / Stubble Burning": 3,
+            "Mining Area / Coal Mine Fire": 4,
+            "Urban / Landfill Fire": 5
         }
 
         # Calculate median NDVI of available records for clean training
@@ -354,6 +398,9 @@ class DualModelClassifier:
                 r.confidence,
                 r.distance_to_refinery_m,
                 r.distance_to_population_m,
+                r.distance_to_forest_m,
+                r.distance_to_farmland_m,
+                r.distance_to_mining_m,
                 r.persistence_days,
                 eff_ndvi,
                 anom

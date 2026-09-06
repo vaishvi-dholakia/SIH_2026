@@ -96,14 +96,29 @@ def get_hotspot_stats(db: Session = Depends(get_db)):
     ).count()
 
     wildfires = db.query(ActiveHotspot).filter(
-        ActiveHotspot.classification == "Non-Industrial Fire"
+        ActiveHotspot.classification == "Forest Fire / Wildfire"
+    ).count()
+
+    agricultural_fires = db.query(ActiveHotspot).filter(
+        ActiveHotspot.classification == "Agricultural / Stubble Burning"
+    ).count()
+
+    mining_fires = db.query(ActiveHotspot).filter(
+        ActiveHotspot.classification == "Mining Area / Coal Mine Fire"
+    ).count()
+
+    urban_fires = db.query(ActiveHotspot).filter(
+        ActiveHotspot.classification == "Urban / Landfill Fire"
     ).count()
 
     return HotspotStats(
         total_active=total_active,
         potential_emergencies=potential_emergencies,
         operational_flares=operational_flares,
-        wildfires=wildfires
+        wildfires=wildfires,
+        agricultural_fires=agricultural_fires,
+        mining_fires=mining_fires,
+        urban_fires=urban_fires
     )
 
 @router.get("/logs", response_model=HotspotLogsResponse)

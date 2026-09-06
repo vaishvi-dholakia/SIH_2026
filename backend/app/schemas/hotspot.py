@@ -13,6 +13,10 @@ class HotspotBase(BaseModel):
     persistence_days: int = 1
     distance_to_refinery_m: float
     distance_to_population_m: float
+    distance_to_forest_m: Optional[float] = 999999.0
+    distance_to_farmland_m: Optional[float] = 999999.0
+    distance_to_mining_m: Optional[float] = 999999.0
+    distance_to_landfill_m: Optional[float] = 999999.0
     anomaly_score: float = 0.0
     priority_score: int = 0
     detected_at: datetime
@@ -45,6 +49,9 @@ class HotspotStats(BaseModel):
     potential_emergencies: int
     operational_flares: int
     wildfires: int
+    agricultural_fires: int
+    mining_fires: int
+    urban_fires: int
 
 class HotspotLogsResponse(BaseModel):
     total: int

@@ -15,14 +15,17 @@ export default function ThermalAnalytics({ trends, summary }) {
     { date: '2026-09-03', avgFrp: 4.0, count: 227 }
   ];
 
-  const classifications = summary?.classifications || [
-    { name: 'Non-Industrial Fire', count: 227 },
+  const classifications = summary?.classifications?.length > 0 ? summary.classifications : [
+    { name: 'Forest Fire / Wildfire', count: 120 },
+    { name: 'Agricultural / Stubble Burning', count: 85 },
+    { name: 'Urban / Landfill Fire', count: 22 },
     { name: 'Potential Industrial Incident', count: 0 },
-    { name: 'Potential Industrial Thermal Source', count: 0 }
+    { name: 'Potential Industrial Thermal Source', count: 0 },
+    { name: 'Mining Area / Coal Mine Fire', count: 0 }
   ];
 
-  // Tactical Colors: Amber (Biomass), Red (Incident), Green (Flare)
-  const COLORS = ['#ff9100', '#ff1744', '#00e676'];
+  // Tactical Colors for 6 classes: Green, Red, Cyan, Yellow, Brown, Magenta
+  const COLORS = ['#00e676', '#ff1744', '#00e5ff', '#ffeb3b', '#795548', '#d500f9'];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">

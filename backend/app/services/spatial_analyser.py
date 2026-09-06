@@ -8,6 +8,10 @@ import pyproj
 from sqlalchemy.orm import Session
 from app.models.refinery import Refinery
 from app.models.population import PopulationCenter
+from app.models.forest import Forest
+from app.models.farmland import Farmland
+from app.models.mine import Mine
+from app.models.landfill import Landfill
 
 logger = logging.getLogger("geoscd.spatial_analyser")
 
@@ -23,6 +27,10 @@ class SpatialResult:
         nearest_refinery_id: Optional[int],
         distance_to_refinery_m: float,
         distance_to_population_m: float,
+        distance_to_forest_m: float = 999999.0,
+        distance_to_farmland_m: float = 999999.0,
+        distance_to_mining_m: float = 999999.0,
+        distance_to_landfill_m: float = 999999.0,
         nearest_refinery_name: Optional[str] = None
     ):
         self.is_inside_refinery = is_inside_refinery
@@ -30,6 +38,10 @@ class SpatialResult:
         self.nearest_refinery_id = nearest_refinery_id
         self.distance_to_refinery_m = distance_to_refinery_m
         self.distance_to_population_m = distance_to_population_m
+        self.distance_to_forest_m = distance_to_forest_m
+        self.distance_to_farmland_m = distance_to_farmland_m
+        self.distance_to_mining_m = distance_to_mining_m
+        self.distance_to_landfill_m = distance_to_landfill_m
         self.nearest_refinery_name = nearest_refinery_name
 
     def to_dict(self) -> Dict[str, Any]:
@@ -39,6 +51,10 @@ class SpatialResult:
             "nearest_refinery_id": self.nearest_refinery_id,
             "distance_to_refinery_m": self.distance_to_refinery_m,
             "distance_to_population_m": self.distance_to_population_m,
+            "distance_to_forest_m": self.distance_to_forest_m,
+            "distance_to_farmland_m": self.distance_to_farmland_m,
+            "distance_to_mining_m": self.distance_to_mining_m,
+            "distance_to_landfill_m": self.distance_to_landfill_m,
             "nearest_refinery_name": self.nearest_refinery_name,
         }
 
@@ -90,11 +106,16 @@ class SpatialAnalyser:
         Evaluates a thermal anomaly coordinate against:
         1. All registered Refinery geofences (inside polygon check, safety buffer, nearest distance)
         2. All registered PopulationCenter boundaries (nearest distance)
+        3. All environmental boundaries (Forests, Farmlands, Mines, Landfills)
         """
         pt = Point(lon, lat)
 
         refineries = db.query(Refinery).all()
         population_centers = db.query(PopulationCenter).all()
+        forests = db.query(Forest).all()
+        farmlands = db.query(Farmland).all()
+        mines = db.query(Mine).all()
+        landfills = db.query(Landfill).all()
 
         is_inside_refinery = False
         is_within_safety_buffer = False
@@ -126,15 +147,20 @@ class SpatialAnalyser:
                     nearest_refinery_id = ref.id
                     nearest_refinery_name = ref.name
 
-        # Calculate nearest distance to population settlements
-        min_pop_dist = 999999.0
-        for pop in population_centers:
-            pop_geom = cls.parse_wkt_safe(pop.geometry)
-            if not pop_geom:
-                continue
-            dist_pop = cls.calculate_metric_distance(pt, pop_geom)
-            if dist_pop < min_pop_dist:
-                min_pop_dist = dist_pop
+        def get_min_dist(records):
+            min_dist = 999999.0
+            for rec in records:
+                geom = cls.parse_wkt_safe(rec.geometry)
+                if not geom: continue
+                d = cls.calculate_metric_distance(pt, geom)
+                if d < min_dist: min_dist = d
+            return min_dist
+
+        min_pop_dist = get_min_dist(population_centers)
+        min_forest_dist = get_min_dist(forests)
+        min_farm_dist = get_min_dist(farmlands)
+        min_mine_dist = get_min_dist(mines)
+        min_landfill_dist = get_min_dist(landfills)
 
         return SpatialResult(
             is_inside_refinery=is_inside_refinery,
@@ -142,5 +168,9 @@ class SpatialAnalyser:
             nearest_refinery_id=nearest_refinery_id,
             distance_to_refinery_m=round(min_refinery_dist, 2),
             distance_to_population_m=round(min_pop_dist, 2),
+            distance_to_forest_m=round(min_forest_dist, 2),
+            distance_to_farmland_m=round(min_farm_dist, 2),
+            distance_to_mining_m=round(min_mine_dist, 2),
+            distance_to_landfill_m=round(min_landfill_dist, 2),
             nearest_refinery_name=nearest_refinery_name
         )

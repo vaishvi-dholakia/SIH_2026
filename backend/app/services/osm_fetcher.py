@@ -5,6 +5,10 @@ import httpx
 from sqlalchemy.orm import Session
 from app.models.refinery import Refinery
 from app.models.population import PopulationCenter
+from app.models.forest import Forest
+from app.models.farmland import Farmland
+from app.models.mine import Mine
+from app.models.landfill import Landfill
 
 logger = logging.getLogger("geoscd.osm_fetcher")
 
@@ -202,13 +206,98 @@ class OSMFetcher:
         return count
 
     @classmethod
+    async def _fetch_and_sync_generic(cls, db: Session, query: str, model_class, name_prefix: str) -> int:
+        elements = await cls.query_overpass(query)
+        if not elements:
+            return 0
+        count = 0
+        for el in elements:
+            tags = el.get("tags", {})
+            name = tags.get("name") or tags.get("name:en") or f"{name_prefix}_{count}"
+            lat = el.get("lat") or el.get("center", {}).get("lat")
+            lon = el.get("lon") or el.get("center", {}).get("lon")
+            if not lat or not lon:
+                continue
+            wkt_geom = cls.create_bounding_polygon_wkt(lat, lon, radius_km=1.0)
+            existing = db.query(model_class).filter(model_class.name == name.strip()).first()
+            if existing:
+                existing.geometry = wkt_geom
+            else:
+                obj = model_class(name=name.strip(), geometry=wkt_geom)
+                db.add(obj)
+                count += 1
+        db.commit()
+        logger.info(f"Successfully synced {count} {name_prefix} areas from OpenStreetMap.")
+        return count
+
+    @classmethod
+    async def fetch_and_sync_forests(cls, db: Session) -> int:
+        query_ql = """
+        [out:json][timeout:25];
+        (
+          nwr["landuse"="forest"](6.0,68.0,37.5,97.5);
+          nwr["natural"="wood"](6.0,68.0,37.5,97.5);
+          nwr["boundary"="national_park"](6.0,68.0,37.5,97.5);
+        );
+        out center tags 10;
+        """
+        return await cls._fetch_and_sync_generic(db, query_ql, Forest, "Forest")
+
+    @classmethod
+    async def fetch_and_sync_farmlands(cls, db: Session) -> int:
+        query_ql = """
+        [out:json][timeout:25];
+        (
+          nwr["landuse"="farmland"](6.0,68.0,37.5,97.5);
+          nwr["landuse"="farmyard"](6.0,68.0,37.5,97.5);
+        );
+        out center tags 10;
+        """
+        return await cls._fetch_and_sync_generic(db, query_ql, Farmland, "Farmland")
+
+    @classmethod
+    async def fetch_and_sync_mines(cls, db: Session) -> int:
+        query_ql = """
+        [out:json][timeout:25];
+        (
+          nwr["landuse"="quarry"](6.0,68.0,37.5,97.5);
+          nwr["industrial"="mine"](6.0,68.0,37.5,97.5);
+          nwr["resource"="coal"](6.0,68.0,37.5,97.5);
+        );
+        out center tags 10;
+        """
+        return await cls._fetch_and_sync_generic(db, query_ql, Mine, "Mine")
+
+    @classmethod
+    async def fetch_and_sync_landfills(cls, db: Session) -> int:
+        query_ql = """
+        [out:json][timeout:25];
+        (
+          nwr["landuse"="landfill"](6.0,68.0,37.5,97.5);
+          nwr["amenity"="waste_disposal"](6.0,68.0,37.5,97.5);
+        );
+        out center tags 10;
+        """
+        return await cls._fetch_and_sync_generic(db, query_ql, Landfill, "Landfill")
+
+    @classmethod
     async def sync_all_from_osm(cls, db: Session) -> Dict[str, Any]:
         """Runs full live synchronization from OpenStreetMap for all infrastructure."""
         ref_count = await cls.fetch_and_sync_refineries(db)
         pop_count = await cls.fetch_and_sync_settlements(db)
+        
+        forest_count = await cls.fetch_and_sync_forests(db)
+        farm_count = await cls.fetch_and_sync_farmlands(db)
+        mine_count = await cls.fetch_and_sync_mines(db)
+        landfill_count = await cls.fetch_and_sync_landfills(db)
+
         return {
             "refineries_synced": ref_count,
             "population_centers_synced": pop_count,
+            "forests_synced": forest_count,
+            "farmlands_synced": farm_count,
+            "mines_synced": mine_count,
+            "landfills_synced": landfill_count,
             "total_refineries_in_db": db.query(Refinery).count(),
             "total_population_centers_in_db": db.query(PopulationCenter).count()
         }
