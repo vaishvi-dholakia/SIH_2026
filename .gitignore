@@ -1,0 +1,28 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*.class
+
+# Environment files
+.env
+.env.local
+
+# Database
+*.db
+geoscd.db
+
+# Test & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Scratch & temporary processing files
+scratch/*.tif
+scratch/*.tiff
+scratch/*.png
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

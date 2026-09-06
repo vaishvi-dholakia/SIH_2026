@@ -1,0 +1,60 @@
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
+
+class HotspotBase(BaseModel):
+    latitude: float
+    longitude: float
+    brightness: float
+    frp: float
+    confidence: float
+    ndvi: Optional[float] = None
+    ndvi_pending: bool = False
+    persistence_days: int = 1
+    distance_to_refinery_m: float
+    distance_to_population_m: float
+    anomaly_score: float = 0.0
+    priority_score: int = 0
+    detected_at: datetime
+    classification: str
+    model_confidence: float = 0.0
+    is_suppressed: bool = False
+    status: str = "new"
+    nearest_refinery_id: Optional[int] = None
+
+class HotspotOut(HotspotBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class HotspotStatusUpdate(BaseModel):
+    status: str = Field(..., example="reviewed", pattern="^(new|reviewed|resolved)$")
+
+class HotspotGeoJSONFeature(BaseModel):
+    type: str = "Feature"
+    geometry: Dict[str, Any]
+    properties: Dict[str, Any]
+
+class HotspotGeoJSONCollection(BaseModel):
+    type: str = "FeatureCollection"
+    features: List[HotspotGeoJSONFeature]
+
+class HotspotStats(BaseModel):
+    total_active: int
+    potential_emergencies: int
+    operational_flares: int
+    wildfires: int
+
+class HotspotLogsResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    data: List[HotspotOut]
+
+class SimulateHotspotRequest(BaseModel):
+    simulation_type: str = Field("INDUSTRIAL_INCIDENT", description="INDUSTRIAL_INCIDENT, SUPPRESSED_FLARE, or BIOMASS_STUBBLE")
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
