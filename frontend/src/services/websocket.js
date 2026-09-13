@@ -1,7 +1,9 @@
 class SpaceWebSocketService {
   constructor() {
     this.ws = null;
-    this.url = 'ws://localhost:8000/ws/alerts';
+    this.url = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_WS_URL)
+      ? import.meta.env.VITE_WS_URL
+      : 'ws://localhost:8000/ws/alerts';
     this.listeners = [];
     this.statusListeners = [];
     this.reconnectTimer = null;
