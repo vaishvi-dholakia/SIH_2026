@@ -9,33 +9,84 @@ export const apiClient = axios.create({
   },
 });
 
+export const fetchDashboardSummary = async () => {
+  try {
+    const response = await apiClient.get('/api/dashboard/summary');
+    return response.data;
+  } catch (e) {
+    return { totalHotspots: 0, highRisk: 0, critical: 0, suppressed: 0 };
+  }
+};
+
+export const fetchHotspotStats = async () => {
+  try {
+    const response = await apiClient.get('/api/hotspots/stats');
+    return response.data;
+  } catch (e) {
+    return {
+      total_active: 0,
+      potential_emergencies: 0,
+      operational_flares: 0,
+      wildfires: 0,
+      agricultural_fires: 0,
+      mining_fires: 0,
+      urban_fires: 0
+    };
+  }
+};
+
 export const fetchRealtimeHotspots = async (params = {}) => {
-  const response = await apiClient.get('/api/hotspots/realtime', { params });
+  try {
+    const response = await apiClient.get('/api/hotspots/realtime', { params });
+    return response.data;
+  } catch (e) {
+    return { type: "FeatureCollection", features: [] };
+  }
+};
+
+export const fetchIncidents = async (params = {}) => {
+  try {
+    const response = await apiClient.get('/api/incidents', { params });
+    return response.data;
+  } catch (e) {
+    return [];
+  }
+};
+
+export const fetchIncidentById = async (id) => {
+  const response = await apiClient.get(`/api/incidents/${id}`);
   return response.data;
 };
 
-export const fetchHotspotDetail = async (id) => {
-  const response = await apiClient.get(`/api/hotspots/${id}`);
-  return response.data;
+export const fetchIncidentHistory = async (id) => {
+  try {
+    const response = await apiClient.get(`/api/incidents/${id}/history`);
+    return response.data;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const fetchIncidentSatellite = async (id) => {
+  try {
+    const response = await apiClient.get(`/api/incidents/${id}/satellite`);
+    return response.data;
+  } catch (e) {
+    return null;
+  }
 };
 
 export const fetchRefineries = async () => {
-  const response = await apiClient.get('/api/refineries');
-  return response.data;
-};
-
-export const fetchAnalyticsSummary = async () => {
-  const response = await apiClient.get('/api/analytics/summary');
-  return response.data;
-};
-
-export const fetchAnalyticsTrends = async () => {
-  const response = await apiClient.get('/api/analytics/trends');
-  return response.data;
+  try {
+    const response = await apiClient.get('/api/refineries');
+    return response.data;
+  } catch (e) {
+    return [];
+  }
 };
 
 export const downloadPdfReport = async (hotspotId) => {
-  const url = `${API_BASE}/api/reports/pdf/${hotspotId}`;
+  const url = `${API_BASE}/api/reports/incident/${hotspotId}/pdf`;
   window.open(url, '_blank');
 };
 
@@ -55,5 +106,10 @@ export const updateHotspotStatus = async (id, status) => {
 
 export const triggerBackfill = async (limit = 200) => {
   const response = await apiClient.post('/api/admin/backfill', null, { params: { limit } });
+  return response.data;
+};
+
+export const syncOsmData = async () => {
+  const response = await apiClient.post('/api/refineries/sync-osm');
   return response.data;
 };

@@ -61,7 +61,10 @@ class HotspotLogsResponse(BaseModel):
     data: List[HotspotOut]
 
 class SimulateHotspotRequest(BaseModel):
-    simulation_type: str = Field("INDUSTRIAL_INCIDENT", description="INDUSTRIAL_INCIDENT, SUPPRESSED_FLARE, or BIOMASS_STUBBLE")
+    simulation_type: str = Field(
+        "INDUSTRIAL_INCIDENT",
+        description="INDUSTRIAL_INCIDENT, SUPPRESSED_FLARE, FOREST_FIRE, AGRICULTURAL_FIRE, MINING_FIRE, or URBAN_LANDFILL_FIRE"
+    )
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 

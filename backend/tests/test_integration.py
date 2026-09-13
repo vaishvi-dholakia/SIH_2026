@@ -111,7 +111,7 @@ def test_suppression_algorithm_persistent_flaring_and_explosion_bypass(test_db):
     test_db.commit()
 
     # Case A: Normal subsequent hotspot with 16 MW (within historical average)
-    is_supp, is_crit, avg_frp, pers_days, reason = SuppressionEngine.evaluate(
+    is_supp, is_crit, avg_frp, frp_ratio, frp_change_pct, pers_days, reason = SuppressionEngine.evaluate(
         lat=flare_lat,
         lon=flare_lon,
         current_frp=16.0,
@@ -125,7 +125,7 @@ def test_suppression_algorithm_persistent_flaring_and_explosion_bypass(test_db):
     assert "Normal Operational Chimney Flare" in reason
 
     # Case B: Sudden massive surge: 75 MW (> 300% increase over 15 MW baseline)
-    is_supp_spike, is_crit_spike, _, _, reason_spike = SuppressionEngine.evaluate(
+    is_supp_spike, is_crit_spike, _, _, _, _, reason_spike = SuppressionEngine.evaluate(
         lat=flare_lat,
         lon=flare_lon,
         current_frp=75.0,  # 400% increase
@@ -135,7 +135,7 @@ def test_suppression_algorithm_persistent_flaring_and_explosion_bypass(test_db):
     )
     assert is_supp_spike is False
     assert is_crit_spike is True
-    assert "CRITICAL DISASTER ALARM" in reason_spike
+    assert "3x FRP Surge Detected" in reason_spike
 
 # ==============================================================================
 # Scenario 3: NDVI Calculation Verification & Database Purity Assertion

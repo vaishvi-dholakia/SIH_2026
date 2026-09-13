@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.hotspot import ActiveHotspot
 from app.models.refinery import Refinery
 from app.ml.classifier import classifier_service
+from app.services.scoring import calculate_unified_hazard_score, get_severity_label
 
 router = APIRouter(prefix="/api/reports", tags=["Forensic Reports"])
 
@@ -50,6 +51,16 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     ref_name = refinery.name if refinery else "N/A (Wildfire/Open Area)"
     ref_op = refinery.operator if refinery else "N/A"
 
+    score = calculate_unified_hazard_score(
+        classification=hotspot.classification,
+        frp=hotspot.frp or 0.0,
+        distance_to_refinery_m=hotspot.distance_to_refinery_m or 999999.0,
+        distance_to_population_m=hotspot.distance_to_population_m or 999999.0,
+        anomaly_score=hotspot.anomaly_score or 0.0,
+        is_suppressed=bool(hotspot.is_suppressed)
+    )
+    sev_label = get_severity_label(score)
+
     # Dynamic Explainability reasons
     reasons = classifier_service.generate_xai_explanations(
         classification=hotspot.classification,
@@ -74,9 +85,10 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     pdf.cell(0, 8, f"INCIDENT DOSSIER: #{hotspot.id} -- {hotspot.classification.upper()}", 0, 1, "L")
 
     # Priority Score Banner
-    is_crit = hotspot.priority_score >= 60 or hotspot.classification == "Potential Industrial Incident"
-    if is_crit:
+    if sev_label == "Critical":
         pdf.set_fill_color(239, 68, 68)  # Red
+    elif sev_label == "High":
+        pdf.set_fill_color(249, 115, 22) # Orange
     elif hotspot.is_suppressed:
         pdf.set_fill_color(16, 185, 129)  # Green
     else:
@@ -84,9 +96,10 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
 
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 10)
-    status_text = f"PRIORITY SCORE: {hotspot.priority_score}/100  |  STATUS: {hotspot.status.upper()}  |  SUPPRESSION: {'SUPPRESSED (NORMAL FLARE)' if hotspot.is_suppressed else 'UNSUPPRESSED (ACTIVE EVENT)'}"
+    status_text = f"HAZARD SCORE: {score}/100 ({sev_label.upper()})  |  STATUS: {hotspot.status.upper()}  |  SUPPRESSION: {'SUPPRESSED (NORMAL FLARE)' if hotspot.is_suppressed else 'UNSUPPRESSED (ACTIVE EVENT)'}"
     pdf.cell(0, 8, status_text, 0, 1, "C", fill=True)
     pdf.ln(5)
+
 
     # Section 1: Geospatial & Sensor Telemetry Table
     pdf.set_font("Helvetica", "B", 11)
