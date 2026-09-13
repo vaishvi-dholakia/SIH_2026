@@ -12,19 +12,23 @@ from app.models.hotspot import ActiveHotspot
 from app.ml.classifier import classifier_service
 from app.services.scoring import calculate_unified_hazard_score
 
-def reclassify_all():
+import asyncio
+
+async def reclassify_all():
     db = SessionLocal()
     try:
         from app.services.osm_fetcher import OSMFetcher
         from app.services.spatial_analyser import SpatialAnalyser
+        from app.services.sentinel_ndvi import SentinelNDVIService
 
         print("Seeding environmental geofences (Forests, Farmlands, Mines, Landfills)...")
         OSMFetcher.seed_environmental_zones(db)
 
         hotspots = db.query(ActiveHotspot).all()
-        print(f"Loaded {len(hotspots)} hotspots from DB for full spatial reclassification...")
+        print(f"Loaded {len(hotspots)} hotspots from DB for full spatial & NDVI reclassification...")
 
         updated = 0
+        ndvi_updated = 0
         for h in hotspots:
             # Re-evaluate accurate spatial distances against all geofences
             spatial_res = SpatialAnalyser.analyse_point(h.latitude, h.longitude, db)
@@ -36,6 +40,14 @@ def reclassify_all():
             h.distance_to_mining_m = spatial_res.distance_to_mining_m
             h.distance_to_landfill_m = spatial_res.distance_to_landfill_m
             h.nearest_refinery_id = spatial_res.nearest_refinery_id
+
+            # If NDVI is pending or None, attempt to fetch real Copernicus Sentinel-2 NDVI
+            if h.ndvi is None:
+                new_ndvi, pending = await SentinelNDVIService.fetch_and_calculate_ndvi(h.latitude, h.longitude, h.id)
+                if new_ndvi is not None:
+                    h.ndvi = new_ndvi
+                    h.ndvi_pending = False
+                    ndvi_updated += 1
 
             cls_name, conf, anomaly_score = classifier_service.predict(
                 brightness=h.brightness or 320.0,
@@ -69,9 +81,9 @@ def reclassify_all():
             updated += 1
 
         db.commit()
-        print(f"Successfully reclassified {updated} hotspots in backend DB!")
+        print(f"Successfully reclassified {updated} hotspots in DB! Updated {ndvi_updated} pending NDVI values.")
     finally:
         db.close()
 
 if __name__ == "__main__":
-    reclassify_all()
+    asyncio.run(reclassify_all())

@@ -10,6 +10,7 @@ class HotspotBase(BaseModel):
     confidence: float
     ndvi: Optional[float] = None
     ndvi_pending: bool = False
+    ndvi_status_reason: Optional[str] = "Pending Satellite Image Pass"
     persistence_days: int = 1
     distance_to_refinery_m: float
     distance_to_population_m: float

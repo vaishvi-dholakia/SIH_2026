@@ -106,6 +106,17 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
                 <span className="text-xs text-slate-400 block">Last Updated</span>
                 <strong className="text-sm font-bold text-white">{incident.lastUpdated} UTC</strong>
               </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 sm:col-span-3 col-span-2">
+                <span className="text-xs text-slate-400 block font-bold">Sentinel-2 NDVI Satellite Telemetry</span>
+                <strong className="text-xs font-mono font-bold text-emerald-400">
+                  {incident.ndvi !== null && incident.ndvi !== undefined 
+                    ? `Real Calculated NDVI: ${incident.ndvi}` 
+                    : incident.is_suppressed 
+                      ? `NULL (Bypassed: Suppressed Routine Industrial Flare — API Quota Protected)` 
+                      : `NULL (Pending Sentinel-2 Satellite Pass)`}
+                </strong>
+              </div>
             </div>
           </div>
 

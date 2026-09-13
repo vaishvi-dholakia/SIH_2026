@@ -79,11 +79,19 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
 
   const badge = getBadgeStyle(h.classification);
 
+  const ndviReason = h.ndvi_status_reason || (
+    h.ndvi !== null && h.ndvi !== undefined 
+      ? `Real Sentinel-2 Vegetation Index (NDVI): ${h.ndvi}` 
+      : h.is_suppressed 
+        ? `NDVI Status: NULL (Suppressed Routine Industrial Flare — API Quota Protection).` 
+        : `NDVI Status: NULL (Pending Sentinel-2 Satellite Pass).`
+  );
+
   // XAI terminal console text
   const xaiReasons = h.reasons && h.reasons.length > 0 ? h.reasons : [
     `🚨 CRITICAL ALERT: Heat coordinate intersects registered facility '${facility}'.`,
     `Fire Radiative Power surge calculated at ${frpVal} MW (+${frpChange}% relative to historical baseline).`,
-    `Multispectral Sentinel-2 SWIR-2 band B12 confirms localized high-temperature combustion on site.`,
+    `Multispectral Sentinel-2 Telemetry: ${ndviReason}`,
     `Distance to nearest residential population settlement: ${intOrFallback(distPop, 1200)} meters.`
   ];
 
