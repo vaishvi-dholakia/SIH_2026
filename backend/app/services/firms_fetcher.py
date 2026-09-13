@@ -192,14 +192,12 @@ class FIRMSFetcher:
 
         # Step 3: Conditional Satellite Trigger
         ndvi = None
-        ndbi = None
         ndvi_pending = False
-        ndbi_pending = False
 
         if is_suppressed:
-            # Check historical database for any previously recorded real NDVI/NDBI value at this exact coordinate
+            # Check historical database for any previously recorded real NDVI value at this exact coordinate
             coord_tol = 0.002
-            past_rec = db.query(ActiveHotspot.ndvi, ActiveHotspot.ndbi).filter(
+            past_rec = db.query(ActiveHotspot.ndvi).filter(
                 ActiveHotspot.latitude.between(lat - coord_tol, lat + coord_tol),
                 ActiveHotspot.longitude.between(lon - coord_tol, lon + coord_tol),
                 ActiveHotspot.ndvi.isnot(None)
@@ -207,19 +205,13 @@ class FIRMSFetcher:
 
             if past_rec and past_rec[0] is not None:
                 ndvi = past_rec[0]
-                ndbi = past_rec[1]
                 ndvi_pending = False
-                ndbi_pending = False
             else:
                 ndvi = None
-                ndbi = None
                 ndvi_pending = True
-                ndbi_pending = True
         else:
             # Unsuppressed: Trigger real Sentinel-2 multispectral pipeline
-            ndvi, ndbi, _pending_flag = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
-            ndvi_pending = (ndvi is None)
-            ndbi_pending = (ndbi is None)
+            ndvi, ndvi_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
 
         # Step 4: Dual-Model Inference & Unified Scoring
         classification, model_conf, anomaly_score = classifier_service.predict(
@@ -234,7 +226,6 @@ class FIRMSFetcher:
             distance_to_landfill_m=spatial_res.distance_to_landfill_m,
             persistence_days=persistence_days,
             ndvi=ndvi,
-            ndbi=ndbi,
             is_suppressed=is_suppressed,
             db=db
         )
@@ -265,9 +256,6 @@ class FIRMSFetcher:
             if ndvi is not None:
                 hotspot.ndvi = ndvi
                 hotspot.ndvi_pending = False
-            if ndbi is not None:
-                hotspot.ndbi = ndbi
-                hotspot.ndbi_pending = False
             hotspot.persistence_days = persistence_days
             hotspot.distance_to_refinery_m = spatial_res.distance_to_refinery_m
             hotspot.distance_to_population_m = spatial_res.distance_to_population_m
@@ -289,9 +277,7 @@ class FIRMSFetcher:
                 frp=frp,
                 confidence=confidence,
                 ndvi=ndvi,
-                ndbi=ndbi,
                 ndvi_pending=ndvi_pending,
-                ndbi_pending=ndbi_pending,
                 persistence_days=persistence_days,
                 distance_to_refinery_m=spatial_res.distance_to_refinery_m,
                 distance_to_population_m=spatial_res.distance_to_population_m,
