@@ -20,6 +20,23 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections.append(websocket)
         logger.info(f"WebSocket client connected. Total clients: {len(self.active_connections)}")
+        try:
+            db = SessionLocal()
+            try:
+                from app.models.hotspot import ActiveHotspot
+                total_hs = db.query(ActiveHotspot).count()
+                critical_hs = db.query(ActiveHotspot).filter(ActiveHotspot.priority_score >= 60).count()
+                await websocket.send_text(json.dumps({
+                    "type": "CONNECTION_ESTABLISHED",
+                    "status": "LIVE_RADAR_CONNECTED",
+                    "active_hotspots_count": total_hs,
+                    "critical_alerts_count": critical_hs,
+                    "message": "Connected to GEO-SCD Real-Time Satellite Stream"
+                }))
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Error sending welcome packet on WS connect: {e}")
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
@@ -51,11 +68,9 @@ async def websocket_alerts_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
         while True:
-            # Keep-alive receive loop
             data = await websocket.receive_text()
-            # Respond to ping or client queries if needed
-            if data == "ping":
-                await websocket.send_text(json.dumps({"type": "PONG"}))
+            if data in ["ping", "PING"]:
+                await websocket.send_text(json.dumps({"type": "PONG", "status": "LIVE"}))
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
     except Exception as e:

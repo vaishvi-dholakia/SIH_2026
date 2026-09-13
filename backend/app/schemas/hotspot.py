@@ -10,6 +10,8 @@ class HotspotBase(BaseModel):
     confidence: float
     ndvi: Optional[float] = None
     ndvi_pending: bool = False
+    ndbi: Optional[float] = None
+    ndbi_pending: bool = False
     persistence_days: int = 1
     distance_to_refinery_m: float
     distance_to_population_m: float
@@ -61,7 +63,10 @@ class HotspotLogsResponse(BaseModel):
     data: List[HotspotOut]
 
 class SimulateHotspotRequest(BaseModel):
-    simulation_type: str = Field("INDUSTRIAL_INCIDENT", description="INDUSTRIAL_INCIDENT, SUPPRESSED_FLARE, or BIOMASS_STUBBLE")
+    simulation_type: str = Field(
+        "INDUSTRIAL_INCIDENT",
+        description="INDUSTRIAL_INCIDENT, SUPPRESSED_FLARE, FOREST_FIRE, AGRICULTURAL_FIRE, MINING_FIRE, or URBAN_LANDFILL_FIRE"
+    )
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     
     # NASA FIRMS API
     FIRMS_MAP_KEY: str = ""
+    FIRMS_POLL_INTERVAL_SECONDS: int = 300
     # India bounding box: [min_lon, min_lat, max_lon, max_lat]
     INDIA_BBOX: List[float] = [68.0, 6.0, 97.5, 37.5]
     

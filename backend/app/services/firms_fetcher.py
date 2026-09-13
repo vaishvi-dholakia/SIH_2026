@@ -93,8 +93,9 @@ class FIRMSFetcher:
                 lat = float(row.get("latitude", 0))
                 lon = float(row.get("longitude", 0))
 
-                # Filter strictly within India bounding box
-                if not (BBOX_SOUTH <= lat <= BBOX_NORTH and BBOX_WEST <= lon <= BBOX_EAST):
+                # Filter strictly inside Indian Sovereign Territory
+                from app.services.india_boundary import is_point_in_india
+                if not is_point_in_india(lat, lon):
                     continue
 
                 # Parse brightness (VIIRS bright_ti4 or MODIS brightness)
@@ -163,6 +164,12 @@ class FIRMSFetcher:
         """
         lat = raw["latitude"]
         lon = raw["longitude"]
+
+        from app.services.india_boundary import is_point_in_india
+        if not is_point_in_india(lat, lon):
+            logger.info(f"Skipping hotspot at ({lat}, {lon}) - outside Indian sovereign territory.")
+            return None
+
         brightness = raw["brightness"]
         frp = raw["frp"]
         confidence = raw["confidence"]
@@ -172,7 +179,7 @@ class FIRMSFetcher:
         spatial_res = SpatialAnalyser.analyse_point(lat, lon, db)
 
         # Step 2: Suppression Check
-        is_suppressed, is_critical_alarm, hist_avg_frp, persistence_days, suppression_reason = (
+        is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
             SuppressionEngine.evaluate(
                 lat=lat,
                 lon=lon,
@@ -185,48 +192,59 @@ class FIRMSFetcher:
 
         # Step 3: Conditional Satellite Trigger
         ndvi = None
+        ndbi = None
         ndvi_pending = False
+        ndbi_pending = False
 
         if is_suppressed:
-            # Check historical database for any previously recorded real NDVI value at this exact coordinate
+            # Check historical database for any previously recorded real NDVI/NDBI value at this exact coordinate
             coord_tol = 0.002
-            past_ndvi_rec = db.query(ActiveHotspot.ndvi).filter(
+            past_rec = db.query(ActiveHotspot.ndvi, ActiveHotspot.ndbi).filter(
                 ActiveHotspot.latitude.between(lat - coord_tol, lat + coord_tol),
                 ActiveHotspot.longitude.between(lon - coord_tol, lon + coord_tol),
                 ActiveHotspot.ndvi.isnot(None)
             ).first()
 
-            if past_ndvi_rec and past_ndvi_rec[0] is not None:
-                ndvi = past_ndvi_rec[0]
+            if past_rec and past_rec[0] is not None:
+                ndvi = past_rec[0]
+                ndbi = past_rec[1]
                 ndvi_pending = False
+                ndbi_pending = False
             else:
-                # Pure data guarantee: never write hardcoded placeholders like 0.15
                 ndvi = None
+                ndbi = None
                 ndvi_pending = True
+                ndbi_pending = True
         else:
             # Unsuppressed: Trigger real Sentinel-2 multispectral pipeline
-            ndvi, ndvi_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+            ndvi, ndbi, _pending_flag = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+            ndvi_pending = (ndvi is None)
+            ndbi_pending = (ndbi is None)
 
-        # Step 4: Dual-Model Inference & Scoring
+        # Step 4: Dual-Model Inference & Unified Scoring
         classification, model_conf, anomaly_score = classifier_service.predict(
             brightness=brightness,
             frp=frp,
             confidence=confidence,
             distance_to_refinery_m=spatial_res.distance_to_refinery_m,
             distance_to_population_m=spatial_res.distance_to_population_m,
+            distance_to_forest_m=spatial_res.distance_to_forest_m,
+            distance_to_farmland_m=spatial_res.distance_to_farmland_m,
+            distance_to_mining_m=spatial_res.distance_to_mining_m,
+            distance_to_landfill_m=spatial_res.distance_to_landfill_m,
             persistence_days=persistence_days,
             ndvi=ndvi,
+            ndbi=ndbi,
             is_suppressed=is_suppressed,
             db=db
         )
 
-        priority_score = classifier_service.calculate_priority_score(
+        from app.services.scoring import calculate_unified_hazard_score
+        priority_score = calculate_unified_hazard_score(
             classification=classification,
             frp=frp,
-            confidence=confidence,
             distance_to_refinery_m=spatial_res.distance_to_refinery_m,
             distance_to_population_m=spatial_res.distance_to_population_m,
-            persistence_days=persistence_days,
             anomaly_score=anomaly_score,
             is_suppressed=is_suppressed
         )
@@ -247,9 +265,16 @@ class FIRMSFetcher:
             if ndvi is not None:
                 hotspot.ndvi = ndvi
                 hotspot.ndvi_pending = False
+            if ndbi is not None:
+                hotspot.ndbi = ndbi
+                hotspot.ndbi_pending = False
             hotspot.persistence_days = persistence_days
             hotspot.distance_to_refinery_m = spatial_res.distance_to_refinery_m
             hotspot.distance_to_population_m = spatial_res.distance_to_population_m
+            hotspot.distance_to_forest_m = spatial_res.distance_to_forest_m
+            hotspot.distance_to_farmland_m = spatial_res.distance_to_farmland_m
+            hotspot.distance_to_mining_m = spatial_res.distance_to_mining_m
+            hotspot.distance_to_landfill_m = spatial_res.distance_to_landfill_m
             hotspot.anomaly_score = anomaly_score
             hotspot.priority_score = priority_score
             hotspot.classification = classification
@@ -264,10 +289,16 @@ class FIRMSFetcher:
                 frp=frp,
                 confidence=confidence,
                 ndvi=ndvi,
+                ndbi=ndbi,
                 ndvi_pending=ndvi_pending,
+                ndbi_pending=ndbi_pending,
                 persistence_days=persistence_days,
                 distance_to_refinery_m=spatial_res.distance_to_refinery_m,
                 distance_to_population_m=spatial_res.distance_to_population_m,
+                distance_to_forest_m=spatial_res.distance_to_forest_m,
+                distance_to_farmland_m=spatial_res.distance_to_farmland_m,
+                distance_to_mining_m=spatial_res.distance_to_mining_m,
+                distance_to_landfill_m=spatial_res.distance_to_landfill_m,
                 anomaly_score=anomaly_score,
                 priority_score=priority_score,
                 detected_at=detected_at,
@@ -331,11 +362,15 @@ class FIRMSFetcher:
     @classmethod
     async def run_live_ingestion_cycle(cls, db: Session, ws_broadcast_callback=None) -> int:
         """Scheduled / On-Demand active ingestion routine."""
+        import asyncio
         raw_fires = await cls.fetch_firms_data(day_range=1)
+        # Sort by Fire Radiative Power (FRP) and process top 50 most critical detections per cycle
+        top_fires = sorted(raw_fires, key=lambda x: x.get('frp', 0.0), reverse=True)[:50]
         count = 0
-        for raw in raw_fires:
+        for raw in top_fires:
             res = await cls.process_and_ingest_hotspot(raw, db, ws_broadcast_callback)
             if res:
                 count += 1
-        logger.info(f"Ingestion cycle completed. Processed {count} hotspots.")
+            await asyncio.sleep(0.01) # Yield event loop so FastAPI handles incoming API requests instantly
+        logger.info(f"Ingestion cycle completed. Processed {count} high-priority hotspots.")
         return count

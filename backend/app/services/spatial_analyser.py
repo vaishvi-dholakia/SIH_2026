@@ -76,23 +76,21 @@ class SpatialAnalyser:
     def calculate_metric_distance(pt: Point, geom) -> float:
         """
         Calculates accurate distance in meters between a WGS84 Point and a Shapely Geometry.
-        Uses EPSG:3857 projection or polygon boundary minimum distance.
+        Uses true WGS84 geodesic distance to nearest point on polygon boundary.
         """
         if geom is None or pt is None:
             return 999999.0
         
-        # If point is inside polygon, distance is 0
-        if geom.contains(pt):
+        # If point is inside polygon or intersects, distance is 0
+        if geom.contains(pt) or geom.intersects(pt):
             return 0.0
 
         try:
-            # Transform to metric coordinate reference system (EPSG:3857)
-            pt_m = transform(project_to_meters, pt)
-            geom_m = transform(project_to_meters, geom)
-            dist = pt_m.distance(geom_m)
-            return float(dist)
+            from shapely.ops import nearest_points
+            p1, p2 = nearest_points(pt, geom)
+            _, _, dist_geod = geod.inv(p1.x, p1.y, p2.x, p2.y)
+            return float(dist_geod)
         except Exception as e:
-            # Fallback to geodesic centroid approximation
             try:
                 centroid = geom.centroid
                 _, _, dist_geod = geod.inv(pt.x, pt.y, centroid.x, centroid.y)

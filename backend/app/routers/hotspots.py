@@ -56,6 +56,8 @@ def get_realtime_hotspots(
                 "confidence": h.confidence,
                 "ndvi": h.ndvi,
                 "ndvi_pending": h.ndvi_pending,
+                "ndbi": getattr(h, "ndbi", None),
+                "ndbi_pending": getattr(h, "ndbi_pending", getattr(h, "ndbi", None) is None),
                 "persistence_days": h.persistence_days,
                 "distance_to_refinery_m": h.distance_to_refinery_m,
                 "distance_to_population_m": h.distance_to_population_m,
@@ -216,94 +218,128 @@ def get_hotspot_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hotspot not found")
     return hotspot
 
-@router.post("/simulate", response_model=HotspotOut)
+@router.post("/simulate")
 async def simulate_hotspot(
     payload: SimulateHotspotRequest,
     db: Session = Depends(get_db)
 ):
     """
-    Dynamically simulates incoming satellite thermal anomaly.
-    Injects realistic detection into SQLite DB, calculates spatial distance, runs ML classifier,
-    and broadcasts instant WebSocket alarm notification to Command Center deck.
+    Dynamically simulates incoming satellite thermal anomaly for demo/testing purposes.
+    Writes strictly to the isolated `simulated_hotspots` table.
+    Disabled when ENVIRONMENT == "production".
     """
+    from app.config import settings
+    if getattr(settings, "ENVIRONMENT", "development").lower() == "production":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Simulation endpoint is disabled in production environment."
+        )
+
     import random
     from datetime import datetime, timezone
     from app.services.spatial_analyser import SpatialAnalyser
-    from app.ml.classifier import classifier_service
+    from app.services.scoring import calculate_unified_hazard_score
     from app.models.refinery import Refinery
+    from app.models.simulation import SimulatedHotspot
     from app.routers.websockets import ws_manager
+    from app.services.india_boundary import is_point_in_india
 
-    # Select base coordinate
+    sim_type = (payload.simulation_type or "INDUSTRIAL_INCIDENT").upper()
+
+    # Select base coordinate within India
     refinery = None
-    if payload.simulation_type == "INDUSTRIAL_INCIDENT" or payload.simulation_type == "SUPPRESSED_FLARE":
+    if sim_type in ["INDUSTRIAL_INCIDENT", "SUPPRESSED_FLARE"]:
         refinery = db.query(Refinery).order_by(Refinery.id).first()
-    
+
     if payload.latitude and payload.longitude:
         lat = payload.latitude
         lon = payload.longitude
     elif refinery:
-        # Offset slightly near refinery center (0.001 - 0.005 degrees ~ 100m - 500m)
-        lat = refinery.latitude + random.uniform(-0.004, 0.004)
-        lon = refinery.longitude + random.uniform(-0.004, 0.004)
+        try:
+            from shapely import wkt
+            poly = wkt.loads(refinery.geometry)
+            centroid = poly.centroid
+            lat = centroid.y + random.uniform(-0.004, 0.004)
+            lon = centroid.x + random.uniform(-0.004, 0.004)
+        except Exception:
+            lat = 22.350 + random.uniform(-0.004, 0.004)
+            lon = 69.850 + random.uniform(-0.004, 0.004)
     else:
-        # Default Punjab/Haryana agricultural coordinates
-        lat = 30.7333 + random.uniform(-0.5, 0.5)
-        lon = 76.7794 + random.uniform(-0.5, 0.5)
+        # Default representative Indian coordinate (Gujarat)
+        lat = 22.350 + random.uniform(-0.5, 0.5)
+        lon = 69.850 + random.uniform(-0.5, 0.5)
 
-    # Calculate spatial parameters
+    if not is_point_in_india(lat, lon):
+        lat, lon = 22.350, 69.850
+
     spatial_res = SpatialAnalyser.analyse_point(lat, lon, db)
 
-    # Set parameters according to simulation type
-    if payload.simulation_type == "INDUSTRIAL_INCIDENT":
+    if sim_type == "INDUSTRIAL_INCIDENT":
         brightness = round(random.uniform(365.0, 395.0), 2)
         frp = round(random.uniform(180.0, 450.0), 2)
         confidence = round(random.uniform(85.0, 99.0), 1)
         is_suppressed = False
-    elif payload.simulation_type == "SUPPRESSED_FLARE":
+        classification = "Potential Industrial Incident"
+    elif sim_type == "SUPPRESSED_FLARE":
         brightness = round(random.uniform(320.0, 345.0), 2)
         frp = round(random.uniform(25.0, 65.0), 2)
         confidence = round(random.uniform(70.0, 90.0), 1)
         is_suppressed = True
-    else: # BIOMASS_STUBBLE
+        classification = "Potential Industrial Thermal Source"
+    elif sim_type == "FOREST_FIRE":
+        brightness = round(random.uniform(330.0, 360.0), 2)
+        frp = round(random.uniform(60.0, 160.0), 2)
+        confidence = round(random.uniform(75.0, 95.0), 1)
+        is_suppressed = False
+        classification = "Forest Fire / Wildfire"
+    elif sim_type == "AGRICULTURAL_FIRE":
         brightness = round(random.uniform(315.0, 335.0), 2)
         frp = round(random.uniform(15.0, 50.0), 2)
         confidence = round(random.uniform(60.0, 85.0), 1)
         is_suppressed = False
+        classification = "Agricultural / Stubble Burning"
+    elif sim_type == "MINING_FIRE":
+        brightness = round(random.uniform(340.0, 370.0), 2)
+        frp = round(random.uniform(80.0, 200.0), 2)
+        confidence = round(random.uniform(80.0, 95.0), 1)
+        is_suppressed = False
+        classification = "Mining Area / Coal Mine Fire"
+    elif sim_type == "URBAN_LANDFILL_FIRE":
+        brightness = round(random.uniform(325.0, 350.0), 2)
+        frp = round(random.uniform(35.0, 90.0), 2)
+        confidence = round(random.uniform(70.0, 90.0), 1)
+        is_suppressed = False
+        classification = "Urban / Landfill Fire"
+    else:
+        brightness = round(random.uniform(320.0, 350.0), 2)
+        frp = round(random.uniform(30.0, 80.0), 2)
+        confidence = round(random.uniform(70.0, 90.0), 1)
+        is_suppressed = False
+        classification = "Open Region Thermal Anomaly"
 
-    persistence_days = 1 if payload.simulation_type == "INDUSTRIAL_INCIDENT" else random.randint(1, 10)
+    persistence_days = 1 if sim_type == "INDUSTRIAL_INCIDENT" else random.randint(1, 10)
     ndvi = round(random.uniform(0.08, 0.22), 3) if spatial_res.distance_to_refinery_m < 2000 else round(random.uniform(0.45, 0.75), 3)
+    ndbi = round(random.uniform(0.25, 0.45), 3) if spatial_res.distance_to_refinery_m < 2000 else round(random.uniform(0.05, 0.18), 3)
+    anomaly_score = round(random.uniform(0.5, 0.95), 2) if (sim_type == "INDUSTRIAL_INCIDENT" or not is_suppressed) else round(random.uniform(0.05, 0.25), 2)
+    model_conf = round(random.uniform(0.85, 0.98), 2)
 
-    classification, model_conf, anomaly_score = classifier_service.predict(
-        brightness=brightness,
-        frp=frp,
-        confidence=confidence,
-        distance_to_refinery_m=spatial_res.distance_to_refinery_m,
-        distance_to_population_m=spatial_res.distance_to_population_m,
-        persistence_days=persistence_days,
-        ndvi=ndvi,
-        is_suppressed=is_suppressed,
-        db=db
-    )
-
-    priority_score = classifier_service.calculate_priority_score(
+    priority_score = calculate_unified_hazard_score(
         classification=classification,
         frp=frp,
-        confidence=confidence,
         distance_to_refinery_m=spatial_res.distance_to_refinery_m,
         distance_to_population_m=spatial_res.distance_to_population_m,
-        persistence_days=persistence_days,
         anomaly_score=anomaly_score,
         is_suppressed=is_suppressed
     )
 
-    new_hotspot = ActiveHotspot(
+    new_sim = SimulatedHotspot(
         latitude=lat,
         longitude=lon,
         brightness=brightness,
         frp=frp,
         confidence=confidence,
         ndvi=ndvi,
-        ndvi_pending=False,
+        ndbi=ndbi,
         persistence_days=persistence_days,
         distance_to_refinery_m=spatial_res.distance_to_refinery_m,
         distance_to_population_m=spatial_res.distance_to_population_m,
@@ -314,28 +350,37 @@ async def simulate_hotspot(
         is_suppressed=is_suppressed,
         status="new",
         detected_at=datetime.now(timezone.utc),
-        nearest_refinery_id=spatial_res.nearest_refinery_id
+        nearest_refinery_id=spatial_res.nearest_refinery_id,
+        data_source="SIMULATION"
     )
 
-    db.add(new_hotspot)
+    db.add(new_sim)
     db.commit()
-    db.refresh(new_hotspot)
+    db.refresh(new_sim)
 
-    # Broadcast live emergency alarm via WebSocket
-    event_type = "CRITICAL_DISASTER_ALARM" if priority_score >= 60 else "NEW_HOTSPOT_DETECTED"
+    event_type = "CRITICAL_DISASTER_ALARM" if priority_score >= 80 else "NEW_HOTSPOT_DETECTED"
     await ws_manager.broadcast({
         "event": event_type,
-        "id": new_hotspot.id,
-        "latitude": new_hotspot.latitude,
-        "longitude": new_hotspot.longitude,
-        "brightness": new_hotspot.brightness,
-        "frp": new_hotspot.frp,
-        "classification": new_hotspot.classification,
-        "priority_score": new_hotspot.priority_score,
-        "nearest_refinery_name": spatial_res.nearest_refinery_name or "Unknown Industrial Facility",
-        "distance_to_refinery_m": new_hotspot.distance_to_refinery_m,
-        "message": f"SIMULATED BURST: {classification} detected near {spatial_res.nearest_refinery_name or 'Facility'}! FRP: {frp} MW"
+        "id": new_sim.id,
+        "latitude": new_sim.latitude,
+        "longitude": new_sim.longitude,
+        "brightness": new_sim.brightness,
+        "frp": new_sim.frp,
+        "classification": new_sim.classification,
+        "priority_score": new_sim.priority_score,
+        "nearest_refinery_name": spatial_res.nearest_refinery_name or "Open Region Facility",
+        "distance_to_refinery_m": new_sim.distance_to_refinery_m,
+        "message": f"SIMULATED BURST: {classification} detected! FRP: {frp} MW (Score: {priority_score}/100)"
     })
 
-    return new_hotspot
+    return {
+        "id": new_sim.id,
+        "latitude": new_sim.latitude,
+        "longitude": new_sim.longitude,
+        "classification": new_sim.classification,
+        "priority_score": new_sim.priority_score,
+        "data_source": "SIMULATION",
+        "status": "simulated"
+    }
+
 

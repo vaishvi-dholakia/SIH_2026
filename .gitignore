@@ -1,28 +1,24 @@
-# Python bytecode & cache
+# Node dependencies
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+frontend/dist/
+
+# Environment & secrets
+.env
+backend/.env
+frontend/.env
+*.env.local
+
+# Python cache
 __pycache__/
 *.py[cod]
 *.class
+venv/
+.venv/
 
-# Environment files
-.env
-.env.local
-
-# Database
-*.db
-geoscd.db
-
-# Test & coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Scratch & temporary processing files
-scratch/*.tif
-scratch/*.tiff
-scratch/*.png
-
-# IDE & OS files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Logs
+*.log
+backend.log
+desktop.ini
