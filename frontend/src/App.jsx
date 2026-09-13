@@ -1,94 +1,97 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import SpaceNavbar from './components/SpaceNavbar';
-import OrbitalStats from './components/OrbitalStats';
-import SatelliteMapView from './components/SatelliteMapView';
-import LiveTelemetryConsole from './components/LiveTelemetryConsole';
-import TelemetryDrawer from './components/TelemetryDrawer';
-import ThermalAnalytics from './components/ThermalAnalytics';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+  Volume2, VolumeX, ShieldAlert, Radio, Activity, Compass, 
+  Clock, MapPin, Layers, Flame, FileText, Bell
+} from 'lucide-react';
+import SidebarNav from './components/SidebarNav';
+import DashboardView from './components/DashboardView';
+import AlertsView from './components/AlertsView';
+import IncidentDetailsModal from './components/IncidentDetailsModal';
+import MapView from './components/MapView';
+import FilterPanel from './components/FilterPanel';
+import AlertFeed from './components/AlertFeed';
+import TelemetryPanel from './components/TelemetryPanel';
+import ForensicPdfModal from './components/ForensicPdfModal';
+import HistoryView from './components/HistoryView';
+import SettingsView from './components/SettingsView';
 import SpaceAlertToast from './components/SpaceAlertToast';
 import { 
-  fetchRealtimeHotspots, 
-  fetchRefineries, 
-  fetchAnalyticsSummary, 
-  fetchAnalyticsTrends,
-  simulateHotspot 
+  fetchDashboardSummary, 
+  fetchIncidents, 
+  fetchRefineries,
+  fetchIndiaBoundary
 } from './api/client';
 import { spaceWS } from './services/websocket';
-import { ListFilter, Sparkles } from 'lucide-react';
+import { isPointInIndia, setIndiaBoundaryData } from './utils/indiaBoundary';
 
 export default function App() {
+  const [activePage, setActivePage] = useState('map'); // Default to GIS Map Command Deck
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [hotspots, setHotspots] = useState([]);
-  const [refineries, setRefineries] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [trends, setTrends] = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  const [incidents, setIncidents] = useState([]);
+  const [refineries, setRefineries] = useState([]);
+  const [selectedIncident, setSelectedIncident] = useState(null);
+  const [targetMapIncident, setTargetMapIncident] = useState(null);
   const [selectedHotspot, setSelectedHotspot] = useState(null);
+  const [pdfHotspot, setPdfHotspot] = useState(null);
   const [activeAlert, setActiveAlert] = useState(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
-  const [filterClass, setFilterClass] = useState('ALL');
-  const [isLiveStream, setIsLiveStream] = useState(true);
-  const [telemetryLogs, setTelemetryLogs] = useState([]);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [hotspotsGeoJson, refineriesList, summaryData, trendsData] = await Promise.all([
-        fetchRealtimeHotspots(),
-        fetchRefineries(),
-        fetchAnalyticsSummary(),
-        fetchAnalyticsTrends()
-      ]);
+  // Panel collapse states
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [filterCollapsed, setFilterCollapsed] = useState(false);
+  const [alertFeedCollapsed, setAlertFeedCollapsed] = useState(false);
 
-      const features = hotspotsGeoJson?.features || [];
-      const parsedHotspots = features.map(f => ({
-        id: f.id || f.properties?.id,
-        latitude: f.geometry?.coordinates[1],
-        longitude: f.geometry?.coordinates[0],
-        brightness: f.properties?.brightness,
-        frp: f.properties?.frp,
-        confidence: f.properties?.confidence,
-        classification: f.properties?.classification,
-        priority_score: f.properties?.priority_score,
-        is_suppressed: f.properties?.is_suppressed,
-        status: f.properties?.status || 'new',
-        nearest_refinery_name: f.properties?.nearest_refinery_name,
-        distance_to_refinery_m: f.properties?.distance_to_refinery_m,
-        distance_to_population_m: f.properties?.distance_to_population_m,
-        detected_at: f.properties?.detected_at,
-        xai_explanation: f.properties?.xai_explanation
-      }));
+  // Filters state
+  const [filters, setFilters] = useState({
+    minFrp: 0,
+    minScore: 0,
+    hideSuppressed: false,
+    categories: [
+      'Potential Industrial Incident',
+      'Potential Industrial Thermal Source',
+      'Forest Fire / Wildfire',
+      'Agricultural / Stubble Burning',
+      'Mining Area / Coal Mine Fire',
+      'Urban / Landfill Fire'
+    ]
+  });
 
-      setHotspots(parsedHotspots);
-      setRefineries(refineriesList || []);
-      setSummary(summaryData || null);
-      setTrends(trendsData || null);
-    } catch (err) {
-      console.error('Error fetching satellite telemetry:', err);
-    } finally {
-      setLoading(false);
-    }
+  // Live Clock Ticker
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  const addLog = (source, type, msg) => {
-    setTelemetryLogs(prev => [
-      ...prev,
-      { id: Date.now(), time: new Date().toLocaleTimeString(), source, type, msg }
-    ]);
-  };
+  // Fetch India boundary GeoJSON once on load
+  useEffect(() => {
+    fetchIndiaBoundary().then(data => {
+      if (data) setIndiaBoundaryData(data);
+    });
+  }, []);
 
-  const handleSimulate = async (type = 'INDUSTRIAL_INCIDENT', lat = null, lng = null) => {
+  const loadData = useCallback(async () => {
     try {
-      addLog('COMMAND_HUB', 'INFO', `Triggering dynamic satellite burst simulation (${type})...`);
-      const newSpot = await simulateHotspot(type, lat, lng);
-      addLog('SATELLITE_PASS', 'ALERT', `New Thermal Anomaly Ingested: ${newSpot.classification} (FRP: ${newSpot.frp} MW)`);
-      loadData();
+      const [sumData, incList, refList] = await Promise.all([
+        fetchDashboardSummary(),
+        fetchIncidents(),
+        fetchRefineries()
+      ]);
+
+      setSummary(sumData || null);
+      const loadedIncidents = incList || [];
+      setIncidents(loadedIncidents);
+      setRefineries(refList || []);
+
+      // Auto-select first incident for Telemetry Panel if none selected yet
+      if (!selectedHotspot && loadedIncidents.length > 0) {
+        setSelectedHotspot(loadedIncidents[0]);
+      }
     } catch (err) {
-      console.error('Simulation error:', err);
-      addLog('COMMAND_HUB', 'ALERT', 'Failed to execute dynamic simulation.');
+      console.error('Error loading FLAREFILTER telemetry:', err);
     }
-  };
+  }, [selectedHotspot]);
 
   useEffect(() => {
     loadData();
@@ -97,29 +100,18 @@ export default function App() {
 
     const unsubscribeStatus = spaceWS.onStatusChange((status) => {
       setConnectionStatus(status);
-      if (status === 'connected') {
-        addLog('WS_GATEWAY', 'OK', 'WebSocket telemetry stream connected to Space Engine.');
-      } else {
-        addLog('WS_GATEWAY', 'ALERT', 'WebSocket telemetry link disconnected.');
-      }
     });
 
     const unsubscribeMessages = spaceWS.subscribe((message) => {
       if (message.event === 'CRITICAL_DISASTER_ALARM' || message.classification === 'Potential Industrial Incident') {
         setActiveAlert(message);
-        addLog('ALARM_DECK', 'ALERT', message.message || 'CRITICAL INDUSTRIAL INCIDENT DETECTED!');
         if (audioEnabled) {
           try {
             const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
             audio.play().catch(() => {});
           } catch (e) {}
         }
-      } else if (message.event === 'NEW_HOTSPOT_DETECTED') {
-        addLog('VIIRS_FEED', 'OK', message.message || 'Thermal detection updated');
-      } else if (message.event === 'STATUS_UPDATED') {
-        addLog('INCIDENT_TRIAGE', 'INFO', message.message);
       }
-
       loadData();
     });
 
@@ -129,139 +121,267 @@ export default function App() {
     };
   }, [loadData, audioEnabled]);
 
-  // Periodic auto-sync when streaming is live
-  useEffect(() => {
-    if (!isLiveStream) return;
-    const interval = setInterval(() => {
-      loadData();
-    }, 12000);
-    return () => clearInterval(interval);
-  }, [isLiveStream, loadData]);
+  // Filtered Incidents based on FilterPanel settings & Strict Indian Sovereign Territory Boundary
+  const filteredIncidents = useMemo(() => {
+    return (incidents || []).filter(inc => {
+      if (!inc) return false;
+      if (!isPointInIndia(inc.latitude, inc.longitude)) return false;
+      const frp = inc.frp || 0;
+      const score = inc.hazardScore || 50;
+      if (frp < filters.minFrp) return false;
+      if (score < filters.minScore) return false;
+      if (filters.hideSuppressed && inc.isSuppressed) return false;
+      if (filters.categories.length > 0 && inc.classification && !filters.categories.includes(inc.classification)) return false;
+      return true;
+    });
+  }, [incidents, filters]);
 
-  const filteredHotspots = hotspots.filter(h => {
-    if (filterClass === 'ALL') return true;
-    if (filterClass === 'INCIDENT') return h.classification === 'Potential Industrial Incident';
-    if (filterClass === 'FLARE') return h.classification === 'Potential Industrial Thermal Source';
-    if (filterClass === 'FOREST') return h.classification === 'Forest Fire / Wildfire';
-    if (filterClass === 'FARM') return h.classification === 'Agricultural / Stubble Burning';
-    if (filterClass === 'MINE') return h.classification === 'Mining Area / Coal Mine Fire';
-    if (filterClass === 'URBAN') return h.classification === 'Urban / Landfill Fire';
-    return true;
-  });
+  const criticalCount = incidents.filter(i => i.priority === 'Critical').length;
+
+  const resetFilters = () => {
+    setFilters({
+      minFrp: 0,
+      minScore: 0,
+      hideSuppressed: false,
+      categories: [
+        'Potential Industrial Incident',
+        'Potential Industrial Thermal Source',
+        'Forest Fire / Wildfire',
+        'Agricultural / Stubble Burning',
+        'Mining Area / Coal Mine Fire',
+        'Urban / Landfill Fire'
+      ]
+    });
+  };
+
+  const handleSelectHotspot = (hotspot) => {
+    setSelectedHotspot(hotspot);
+    setTargetMapIncident(hotspot);
+  };
 
   return (
-    <div className="min-h-screen bg-grid-pattern flex flex-col font-sans text-slate-100">
+    <div className="min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col font-sans antialiased select-none selection:bg-red-500 selection:text-white">
       
-      <SpaceNavbar
-        connectionStatus={connectionStatus}
-        onRefresh={loadData}
-        audioEnabled={audioEnabled}
-        setAudioEnabled={setAudioEnabled}
-      />
-
-      <main className="max-w-7xl mx-auto px-4 py-4 flex-1 w-full space-y-4">
+      {/* Top Header Bar - National Tactical Operations Deck */}
+      <header className="bg-[#151A26] border-b border-[#262F40] px-4 py-2.5 flex items-center justify-between shadow-lg z-30 shrink-0">
         
-        {/* Orbital KPI Summary */}
-        <OrbitalStats summary={summary} totalRefineries={refineries.length} />
-
-        {/* Dynamic Filter Deck */}
-        <div className="glass-panel p-3 rounded-none flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono">
-          <div className="flex items-center gap-2 text-slate-300">
-            <ListFilter className="w-4 h-4 text-tactical-cyan" />
-            <span className="font-bold uppercase tracking-wider text-tactical-cyan">Satellite View Filter:</span>
+        {/* Left: Branding & Problem Statement */}
+        <div className="flex items-center gap-3">
+          <div className="bg-[#1D4ED8] p-2 rounded-lg text-white shadow-md">
+            <Flame className="w-5 h-5 animate-pulse" />
           </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-            <button
-              onClick={() => setFilterClass('ALL')}
-              className={`px-3 py-1.5 rounded-sm border font-bold transition-all uppercase tracking-wider ${
-                filterClass === 'ALL'
-                  ? 'bg-tactical-cyan/10 text-tactical-cyan border-tactical-cyan shadow-[0_0_8px_rgba(0,229,255,0.3)]'
-                  : 'bg-command-900 text-tactical-gray border-command-border hover:text-white hover:border-tactical-cyan/50'
-              }`}
-            >
-              ALL SATELLITE DETECTIONS ({hotspots.length})
-            </button>
-
-            <button
-              onClick={() => setFilterClass('INCIDENT')}
-              className={`px-3 py-1.5 rounded-sm border font-bold transition-all uppercase tracking-wider ${
-                filterClass === 'INCIDENT'
-                  ? 'bg-tactical-red/10 text-tactical-red border-tactical-red shadow-[0_0_8px_rgba(255,23,68,0.3)]'
-                  : 'bg-command-900 text-tactical-gray border-command-border hover:text-white hover:border-tactical-red/50'
-              }`}
-            >
-              DISASTERS
-            </button>
-
-            <button
-              onClick={() => setFilterClass('FLARE')}
-              className={`px-3 py-1.5 rounded-sm border font-bold transition-all uppercase tracking-wider ${
-                filterClass === 'FLARE'
-                  ? 'bg-tactical-green/10 text-tactical-green border-tactical-green shadow-[0_0_8px_rgba(0,230,118,0.3)]'
-                  : 'bg-command-900 text-tactical-gray border-command-border hover:text-white hover:border-tactical-green/50'
-              }`}
-            >
-              SUPPRESSED FLARES
-            </button>
-
-            <button
-              onClick={() => setFilterClass('BIOMASS')}
-              className={`px-3 py-1.5 rounded-sm border font-bold transition-all uppercase tracking-wider ${
-                filterClass === 'BIOMASS'
-                  ? 'bg-tactical-amber/10 text-tactical-amber border-tactical-amber shadow-[0_0_8px_rgba(255,145,0,0.3)]'
-                  : 'bg-command-900 text-tactical-gray border-command-border hover:text-white hover:border-tactical-amber/50'
-              }`}
-            >
-              BIOMASS / STUBBLE
-            </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-black text-white uppercase tracking-wider font-mono flex items-center gap-1">
+                🔥 FLAREFILTER
+              </h1>
+              <span className="bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-mono font-bold px-2 py-0.5 rounded">
+                INDIAN COMMAND DECK
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-mono">
+              Satellite Fire & Thermal Intelligence
+            </p>
           </div>
         </div>
 
-        {/* Dynamic Satellite Map */}
-        <SatelliteMapView
-          hotspots={filteredHotspots}
-          refineries={refineries}
-          selectedHotspot={selectedHotspot}
-          onSelectHotspot={(hotspot) => setSelectedHotspot(hotspot)}
-          onSimulateAtLocation={(type, lat, lng) => handleSimulate(type, lat, lng)}
+        {/* Right: Telemetry Controls, Audio Mute & Clock */}
+        <div className="flex items-center gap-4 text-xs font-mono">
+          
+          {/* UTC Clock */}
+          <div className="hidden sm:flex items-center gap-1.5 bg-[#0B0E14] border border-[#262F40] px-3 py-1.5 rounded-lg text-slate-300">
+            <Clock className="w-3.5 h-3.5 text-blue-400" />
+            <span>{currentTime.toISOString().replace('T', ' ').substring(0, 19)} UTC</span>
+          </div>
+
+          {/* Audio Speaker Mute Toggle */}
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              audioEnabled 
+                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20' 
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+            }`}
+            title={audioEnabled ? "Mute Incident Alarm Audio" : "Enable Incident Alarm Audio"}
+          >
+            {audioEnabled ? (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Audio Alert ON</span>
+              </>
+            ) : (
+              <>
+                <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+                <span>Audio Muted</span>
+              </>
+            )}
+          </button>
+
+          {/* WebSocket Status Indicator */}
+          <div className="flex items-center gap-1.5 bg-[#0B0E14] border border-[#262F40] px-3 py-1.5 rounded-lg">
+            <span className={`w-2 h-2 rounded-full ${
+              connectionStatus === 'connected' ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'
+            }`} />
+            <span className={connectionStatus === 'connected' ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+              {connectionStatus === 'connected' ? 'WS STREAM ACTIVE' : 'POLLING MODE'}
+            </span>
+          </div>
+
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* Left Sidebar Navigation */}
+        <SidebarNav
+          activePage={activePage}
+          setActivePage={(page) => {
+            setActivePage(page);
+            if (page !== 'map') setTargetMapIncident(null);
+          }}
+          criticalCount={criticalCount}
+          connectionStatus={connectionStatus}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
-        {/* Real-time Telemetry Console Ticker */}
-        <LiveTelemetryConsole
-          logs={telemetryLogs}
-          isLive={isLiveStream}
-          setIsLive={setIsLiveStream}
-          onTriggerSimulate={(type) => handleSimulate(type)}
+        {/* Dynamic Page Views */}
+        {activePage === 'map' ? (
+          /* Main 3-Column Interactive GIS Command Deck Layout */
+          <main className="flex-1 flex min-w-0 overflow-hidden">
+            
+            {/* Collapsible Left Filter Panel */}
+            <FilterPanel
+              filters={filters}
+              setFilters={setFilters}
+              collapsed={filterCollapsed}
+              onToggleCollapse={() => setFilterCollapsed(!filterCollapsed)}
+              onReset={resetFilters}
+            />
+
+            {/* Center Viewport: GIS Map + Telemetry Panel */}
+            <div className="flex-1 flex flex-col min-w-0 p-4 space-y-4 overflow-y-auto bg-[#0B0E14]">
+              
+              {/* GIS Satellite Map */}
+              <MapView
+                incidents={filteredIncidents}
+                refineries={refineries}
+                selectedHotspot={selectedHotspot || filteredIncidents[0]}
+                targetIncident={targetMapIncident}
+                onSelectHotspot={handleSelectHotspot}
+                backendOffline={connectionStatus === 'disconnected'}
+              />
+
+              {/* Bottom Incident Telemetry Panel */}
+              <div id="telemetry-panel">
+                <TelemetryPanel
+                  selectedHotspot={selectedHotspot || filteredIncidents[0]}
+                  onOpenExportPdf={(hotspot) => setPdfHotspot(hotspot)}
+                />
+              </div>
+            </div>
+
+            {/* Collapsible Right Alert Feed */}
+            <AlertFeed
+              incidents={filteredIncidents}
+              selectedHotspot={selectedHotspot || filteredIncidents[0]}
+              onSelectHotspot={handleSelectHotspot}
+              collapsed={alertFeedCollapsed}
+              onToggleCollapse={() => setAlertFeedCollapsed(!alertFeedCollapsed)}
+            />
+
+          </main>
+        ) : (
+          /* Alternative Full Page Views */
+          <main className="flex-1 min-w-0 p-6 md:p-8 overflow-y-auto bg-[#0B0E14]">
+            <div className="max-w-7xl mx-auto space-y-6">
+              
+              {activePage === 'dashboard' && (
+                <DashboardView
+                  summary={summary}
+                  incidents={incidents}
+                  onSelectIncident={(inc) => setSelectedIncident(inc)}
+                />
+              )}
+
+              {activePage === 'alerts' && (
+                <AlertsView
+                  incidents={incidents}
+                  onSelectIncident={(inc) => setSelectedIncident(inc)}
+                />
+              )}
+
+              {activePage === 'history' && (
+                <HistoryView
+                  incidents={incidents}
+                />
+              )}
+
+              {activePage === 'settings' && (
+                <SettingsView />
+              )}
+
+            </div>
+          </main>
+        )}
+
+      </div>
+
+      {/* Incident Details Decision Modal */}
+      {selectedIncident && (
+        <IncidentDetailsModal
+          incident={selectedIncident}
+          onClose={() => setSelectedIncident(null)}
+          onInspectTelemetry={(inc) => {
+            setTargetMapIncident(inc);
+            setSelectedHotspot(inc);
+            setSelectedIncident(null);
+            setActivePage('map');
+            setTimeout(() => {
+              const el = document.getElementById('telemetry-panel');
+              if (el) {
+                const container = el.closest('.overflow-y-auto') || el.parentElement;
+                if (container) {
+                  container.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' });
+                } else {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }
+            }, 150);
+          }}
+          onViewOnMap={(inc) => {
+            setTargetMapIncident(inc);
+            setSelectedHotspot(inc);
+            setSelectedIncident(null);
+            setActivePage('map');
+          }}
+          onViewHistory={() => {
+            setSelectedIncident(null);
+            setActivePage('history');
+          }}
         />
+      )}
 
-        {/* FRP Trends & incident Distribution Charts */}
-        <ThermalAnalytics trends={trends} summary={summary} />
+      {/* Forensic PDF Report Modal */}
+      {pdfHotspot && (
+        <ForensicPdfModal
+          hotspot={pdfHotspot}
+          onClose={() => setPdfHotspot(null)}
+        />
+      )}
 
-      </main>
-
-      {/* Telemetry Drawer Inspection */}
-      <TelemetryDrawer
-        hotspot={selectedHotspot}
-        onClose={() => setSelectedHotspot(null)}
-        onStatusUpdated={(id, status) => {
-          loadData();
-        }}
-      />
-
-      {/* Real-time Disaster Alarm Toast */}
+      {/* Real-time Space Alert Toast Notification */}
       <SpaceAlertToast
         alert={activeAlert}
         onClose={() => setActiveAlert(null)}
         onInspect={(alert) => {
           setSelectedHotspot(alert);
+          setTargetMapIncident(alert);
           setActiveAlert(null);
+          setActivePage('map');
         }}
       />
-
-      <footer className="border-t border-command-border py-4 px-4 text-center text-xs font-mono text-tactical-gray bg-command-950">
-        GEO-SCD COMMAND CENTER • SATELLITE INTELLIGENCE & THERMAL MONITORING
-      </footer>
 
     </div>
   );

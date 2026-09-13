@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.hotspot import ActiveHotspot
 from app.models.refinery import Refinery
 from app.ml.classifier import classifier_service
+from app.services.scoring import calculate_unified_hazard_score, get_severity_label
 
 router = APIRouter(prefix="/api/reports", tags=["Forensic Reports"])
 
@@ -50,6 +51,18 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     ref_name = refinery.name if refinery else "N/A (Wildfire/Open Area)"
     ref_op = refinery.operator if refinery else "N/A"
 
+    score = calculate_unified_hazard_score(
+        classification=hotspot.classification,
+        frp=hotspot.frp or 0.0,
+        distance_to_refinery_m=hotspot.distance_to_refinery_m or 999999.0,
+        distance_to_population_m=hotspot.distance_to_population_m or 999999.0,
+        anomaly_score=hotspot.anomaly_score or 0.0,
+        is_suppressed=bool(hotspot.is_suppressed)
+    )
+    sev_label = get_severity_label(score)
+    is_crit = sev_label == "Critical"
+
+    ndbi_val = getattr(hotspot, 'ndbi', None)
     # Dynamic Explainability reasons
     reasons = classifier_service.generate_xai_explanations(
         classification=hotspot.classification,
@@ -58,6 +71,7 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
         distance_to_population_m=hotspot.distance_to_population_m,
         persistence_days=hotspot.persistence_days,
         ndvi=hotspot.ndvi,
+        ndbi=ndbi_val,
         anomaly_score=hotspot.anomaly_score,
         refinery_name=ref_name
     )
@@ -74,9 +88,10 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     pdf.cell(0, 8, f"INCIDENT DOSSIER: #{hotspot.id} -- {hotspot.classification.upper()}", 0, 1, "L")
 
     # Priority Score Banner
-    is_crit = hotspot.priority_score >= 60 or hotspot.classification == "Potential Industrial Incident"
-    if is_crit:
+    if sev_label == "Critical":
         pdf.set_fill_color(239, 68, 68)  # Red
+    elif sev_label == "High":
+        pdf.set_fill_color(249, 115, 22) # Orange
     elif hotspot.is_suppressed:
         pdf.set_fill_color(16, 185, 129)  # Green
     else:
@@ -84,9 +99,10 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
 
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 10)
-    status_text = f"PRIORITY SCORE: {hotspot.priority_score}/100  |  STATUS: {hotspot.status.upper()}  |  SUPPRESSION: {'SUPPRESSED (NORMAL FLARE)' if hotspot.is_suppressed else 'UNSUPPRESSED (ACTIVE EVENT)'}"
+    status_text = f"HAZARD SCORE: {score}/100 ({sev_label.upper()})  |  STATUS: {hotspot.status.upper()}  |  SUPPRESSION: {'SUPPRESSED (NORMAL FLARE)' if hotspot.is_suppressed else 'UNSUPPRESSED (ACTIVE EVENT)'}"
     pdf.cell(0, 8, status_text, 0, 1, "C", fill=True)
     pdf.ln(5)
+
 
     # Section 1: Geospatial & Sensor Telemetry Table
     pdf.set_font("Helvetica", "B", 11)
@@ -101,10 +117,16 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     col_w3 = 45
     col_w4 = 50
 
+    sat_indices_str = "Pending / Bypassed"
+    if hotspot.ndvi is not None and ndbi_val is not None:
+        sat_indices_str = f"NDVI: {hotspot.ndvi:.3f} | NDBI: {ndbi_val:.3f}"
+    elif hotspot.ndvi is not None:
+        sat_indices_str = f"NDVI: {hotspot.ndvi:.3f} | NDBI: Pending"
+
     data_rows = [
         ("Latitude / Longitude:", f"{hotspot.latitude:.5f}° N, {hotspot.longitude:.5f}° E", "Detection Timestamp:", f"{hotspot.detected_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"),
         ("Fire Radiative Power (FRP):", f"{hotspot.frp:.2f} MW", "Brightness Temperature:", f"{hotspot.brightness:.1f} K"),
-        ("Sensor Detection Confidence:", f"{hotspot.confidence:.1f}%", "Sentinel-2 NDVI:", f"{hotspot.ndvi:.4f}" if hotspot.ndvi is not None else "Pending / Bypassed"),
+        ("Sensor Detection Confidence:", f"{hotspot.confidence:.1f}%", "Sentinel-2 Indices:", sat_indices_str),
         ("Persistence Index (30d):", f"{hotspot.persistence_days} Days Active", "Isolation Forest Anomaly:", f"{hotspot.anomaly_score:.3f}"),
         ("Nearest Industrial Facility:", f"{ref_name}", "Facility Operator:", f"{ref_op}"),
         ("Distance to Facility:", f"{int(hotspot.distance_to_refinery_m):,} m", "Distance to Population:", f"{int(hotspot.distance_to_population_m):,} m")

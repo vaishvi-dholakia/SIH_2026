@@ -111,7 +111,7 @@ def test_suppression_algorithm_persistent_flaring_and_explosion_bypass(test_db):
     test_db.commit()
 
     # Case A: Normal subsequent hotspot with 16 MW (within historical average)
-    is_supp, is_crit, avg_frp, pers_days, reason = SuppressionEngine.evaluate(
+    is_supp, is_crit, avg_frp, frp_ratio, frp_change_pct, pers_days, reason = SuppressionEngine.evaluate(
         lat=flare_lat,
         lon=flare_lon,
         current_frp=16.0,
@@ -125,7 +125,7 @@ def test_suppression_algorithm_persistent_flaring_and_explosion_bypass(test_db):
     assert "Normal Operational Chimney Flare" in reason
 
     # Case B: Sudden massive surge: 75 MW (> 300% increase over 15 MW baseline)
-    is_supp_spike, is_crit_spike, _, _, reason_spike = SuppressionEngine.evaluate(
+    is_supp_spike, is_crit_spike, _, _, _, _, reason_spike = SuppressionEngine.evaluate(
         lat=flare_lat,
         lon=flare_lon,
         current_frp=75.0,  # 400% increase
@@ -135,7 +135,7 @@ def test_suppression_algorithm_persistent_flaring_and_explosion_bypass(test_db):
     )
     assert is_supp_spike is False
     assert is_crit_spike is True
-    assert "CRITICAL DISASTER ALARM" in reason_spike
+    assert "3x FRP Surge Detected" in reason_spike
 
 # ==============================================================================
 # Scenario 3: NDVI Calculation Verification & Database Purity Assertion
@@ -166,8 +166,19 @@ def test_ndvi_calculation_and_pure_null_handling(test_db):
     expected_mean = (0.6 + 0.5 + 0.0 + 0.0) / 4.0
     assert np.isclose(mean_val, expected_mean)
 
-    # Verify that suppressed hotspot without prior NDVI writes ndvi=None and ndvi_pending=True
-    # and strictly does NOT write placeholder constants like 0.15 to the database
+    # Test NDBI = (SWIR - NIR) / (SWIR + NIR)
+    swir_array = np.array([
+        [0.9, 0.7],
+        [0.5, 0.0]
+    ])
+    # [0, 0]: (0.9 - 0.8) / (0.9 + 0.8) = 0.1 / 1.7
+    ndbi_matrix = SentinelNDVIService.calculate_ndbi_array(swir_array, nir_array)
+    assert np.isclose(ndbi_matrix[0, 0], 0.1 / 1.7)
+    mean_ndbi = SentinelNDVIService.calculate_mean_ndbi(swir_array, nir_array)
+    assert mean_ndbi is not None
+
+    # Verify that suppressed hotspot without prior NDVI/NDBI writes ndvi=None, ndbi=None, pending=True
+    # and strictly does NOT write placeholder constants to the database
     new_suppressed = ActiveHotspot(
         latitude=23.100,
         longitude=70.100,
@@ -175,7 +186,9 @@ def test_ndvi_calculation_and_pure_null_handling(test_db):
         frp=12.0,
         confidence=80.0,
         ndvi=None,
+        ndbi=None,
         ndvi_pending=True,
+        ndbi_pending=True,
         is_suppressed=True,
         status="new"
     )
@@ -184,8 +197,9 @@ def test_ndvi_calculation_and_pure_null_handling(test_db):
 
     saved_rec = test_db.query(ActiveHotspot).filter(ActiveHotspot.id == new_suppressed.id).first()
     assert saved_rec.ndvi is None
+    assert saved_rec.ndbi is None
     assert saved_rec.ndvi_pending is True
-    # Confirm no hardcoded mock constants like 0.15 polluted the database
+    assert saved_rec.ndbi_pending is True
     assert saved_rec.ndvi != 0.15
 
 # ==============================================================================
@@ -216,15 +230,134 @@ def test_classifier_cold_start_fallback(caplog):
     assert conf >= 0.8
     assert 0.0 <= anom_score <= 1.0
 
-    # Calculate Priority Score
-    priority = clf.calculate_priority_score(
+    # Calculate Unified Hazard Score
+    from app.services.scoring import calculate_unified_hazard_score
+    priority = calculate_unified_hazard_score(
         classification=label,
         frp=120.0,
-        confidence=90.0,
         distance_to_refinery_m=200.0,
         distance_to_population_m=1200.0,
-        persistence_days=1,
         anomaly_score=anom_score,
         is_suppressed=False
     )
     assert 60 <= priority <= 100
+
+# ==============================================================================
+# Scenario 5: PDF Forensic Report Generation Across Severities
+# ==============================================================================
+def test_generate_pdf_report_all_severities(test_db):
+    from app.routers.reports import generate_incident_pdf
+    from datetime import datetime, timezone
+
+    scenarios = [
+        {"classification": "Potential Industrial Incident", "frp": 250.0, "is_suppressed": False, "dist_ref": 100.0, "dist_pop": 500.0}, # Critical
+        {"classification": "Potential Industrial Thermal Source", "frp": 60.0, "is_suppressed": False, "dist_ref": 1200.0, "dist_pop": 2500.0}, # High
+        {"classification": "Potential Industrial Thermal Source", "frp": 20.0, "is_suppressed": True, "dist_ref": 300.0, "dist_pop": 4000.0}, # Suppressed
+        {"classification": "Forest Fire / Wildfire", "frp": 80.0, "is_suppressed": False, "dist_ref": 40000.0, "dist_pop": 10000.0}, # Wildfire
+    ]
+
+    for item in scenarios:
+        h = ActiveHotspot(
+            latitude=22.35,
+            longitude=69.85,
+            brightness=350.0,
+            frp=item["frp"],
+            confidence=90.0,
+            classification=item["classification"],
+            is_suppressed=item["is_suppressed"],
+            status="new",
+            distance_to_refinery_m=item["dist_ref"],
+            distance_to_population_m=item["dist_pop"],
+            anomaly_score=0.7,
+            persistence_days=1,
+            detected_at=datetime.now(timezone.utc)
+        )
+        test_db.add(h)
+        test_db.commit()
+        test_db.refresh(h)
+
+        resp = generate_incident_pdf(hotspot_id=h.id, db=test_db)
+        assert resp.status_code == 200
+        assert resp.media_type == "application/pdf"
+        assert len(resp.body) > 0
+
+def test_geodesic_distance_across_latitudes():
+    from shapely.geometry import Point, Polygon
+    from pyproj import Geod
+    from app.services.spatial_analyser import SpatialAnalyser
+
+    geod = Geod(ellps="WGS84")
+
+    # Test points at Tamil Nadu (~10°N), Gujarat (~22°N), Punjab (~30°N)
+    test_latitudes = [
+        (10.0, 78.0), # Tamil Nadu
+        (22.0, 72.0), # Gujarat
+        (30.0, 75.0)  # Punjab
+    ]
+
+    for lat, lon in test_latitudes:
+        pt = Point(lon, lat)
+        # Create a 0.01 x 0.01 deg square box slightly offset from the point
+        poly = Polygon([
+            (lon + 0.05, lat + 0.05),
+            (lon + 0.06, lat + 0.05),
+            (lon + 0.06, lat + 0.06),
+            (lon + 0.05, lat + 0.06),
+            (lon + 0.05, lat + 0.05)
+        ])
+
+        dist_calc = SpatialAnalyser.calculate_metric_distance(pt, poly)
+        
+        # True expected geodesic distance using nearest point (lon + 0.05, lat + 0.05)
+        _, _, expected_dist = geod.inv(lon, lat, lon + 0.05, lat + 0.05)
+
+        # Confirm calculate_metric_distance matches expected geodesic distance within 1 meter
+        assert abs(dist_calc - expected_dist) < 1.0
+
+def test_score_consistency_across_endpoints(test_db):
+    from app.routers.incidents import format_incident_object, get_dashboard_summary
+    from app.routers.hotspots import get_hotspot_stats
+    from datetime import datetime, timezone
+
+    from app.services.scoring import calculate_unified_hazard_score
+    score = calculate_unified_hazard_score(
+        classification="Potential Industrial Incident",
+        frp=150.0,
+        distance_to_refinery_m=200.0,
+        distance_to_population_m=1000.0,
+        anomaly_score=0.8,
+        is_suppressed=False
+    )
+
+    # Create hotspot with stored priority_score computed at ingestion
+    h = ActiveHotspot(
+        latitude=22.35,
+        longitude=69.85,
+        brightness=360.0,
+        frp=150.0,
+        confidence=90.0,
+        classification="Potential Industrial Incident",
+        is_suppressed=False,
+        status="new",
+        distance_to_refinery_m=200.0,
+        distance_to_population_m=1000.0,
+        anomaly_score=0.8,
+        priority_score=score,
+        detected_at=datetime.now(timezone.utc)
+    )
+    test_db.add(h)
+    test_db.commit()
+    test_db.refresh(h)
+
+    formatted = format_incident_object(h, test_db)
+    summary = get_dashboard_summary(db=test_db)
+    stats = get_hotspot_stats(db=test_db)
+
+    # All endpoints must agree on severity score and bucket
+    assert formatted["hazardScore"] == score
+    assert formatted["priority"] == "Critical"
+    assert summary["critical"] == 1
+    assert stats.potential_emergencies == 1
+
+
+

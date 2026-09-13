@@ -41,12 +41,35 @@ class SentinelNDVIService:
         ndvi_arr = cls.calculate_ndvi_array(nir, red)
         return float(np.nanmean(ndvi_arr))
 
+    @staticmethod
+    def calculate_ndbi_array(swir: np.ndarray, nir: np.ndarray) -> np.ndarray:
+        """
+        Dynamically computes the Normalized Difference Built-up Index (NDBI)
+        NDBI = (SWIR - NIR) / (SWIR + NIR) using B11 (SWIR) and B08 (NIR).
+        Safely handles division-by-zero bounds using numpy.where.
+        """
+        swir_f = swir.astype(float)
+        nir_f = nir.astype(float)
+        denom = swir_f + nir_f
+        numer = swir_f - nir_f
+        out_arr = np.zeros_like(numer, dtype=float)
+        ndbi = np.divide(numer, denom, out=out_arr, where=denom != 0.0)
+        return np.clip(ndbi, -1.0, 1.0)
+
+    @classmethod
+    def calculate_mean_ndbi(cls, swir: np.ndarray, nir: np.ndarray) -> float:
+        """Calculates mean NDBI value across the cropped matrix."""
+        ndbi_arr = cls.calculate_ndbi_array(swir, nir)
+        return float(np.nanmean(ndbi_arr))
+
     _cached_token: Optional[str] = None
     _token_expiry: float = 0.0
+    _last_error: Optional[str] = None
+    _active_endpoint: Optional[str] = None
 
     @classmethod
     async def get_sentinel_token(cls) -> Optional[str]:
-        """Obtains OAuth2 access token for Sentinel Hub API with in-memory caching."""
+        """Obtains OAuth2 access token for Sentinel Hub API with in-memory caching and CDSE support."""
         import time
 
         # Return cached token if still valid
@@ -57,30 +80,50 @@ class SentinelNDVIService:
         client_secret = settings.SENTINEL_HUB_CLIENT_SECRET
 
         if not client_id or not client_secret:
+            cls._last_error = "SENTINEL_HUB_CLIENT_ID or SENTINEL_HUB_CLIENT_SECRET not configured in .env"
             return None
 
-        url = "https://services.sentinel-hub.com/oauth/token"
-        data = {
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret
-        }
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(url, data=data)
-                if res.status_code == 200:
-                    json_data = res.json()
-                    cls._cached_token = json_data.get("access_token")
-                    expires_in = float(json_data.get("expires_in", 3600))
-                    cls._token_expiry = time.time() + max(300.0, expires_in - 60.0)
-                    logger.info("Successfully refreshed Sentinel Hub OAuth token (cached for 1 hour).")
-                    return cls._cached_token
-                else:
-                    logger.warning(f"Sentinel Hub authentication failed: HTTP {res.status_code}")
-                    return None
-        except Exception as e:
-            logger.warning(f"Error authenticating with Sentinel Hub: {e}")
-            return None
+        # Prepare client ID variants (CDSE credentials often require 'sh-' prefix)
+        cids_to_try = [client_id]
+        if not client_id.startswith("sh-"):
+            cids_to_try.append(f"sh-{client_id}")
+
+        # Copernicus Data Space Ecosystem (CDSE) primary & Sentinel Hub legacy fallback endpoints
+        auth_urls = [
+            ("https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token", "https://sh.dataspace.copernicus.eu/api/v1/process"),
+            ("https://services.sentinel-hub.com/oauth/token", "https://services.sentinel-hub.com/api/v1/process")
+        ]
+
+        last_err_msg = ""
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for auth_url, proc_url in auth_urls:
+                for cid in cids_to_try:
+                    data = {
+                        "grant_type": "client_credentials",
+                        "client_id": cid,
+                        "client_secret": client_secret
+                    }
+                    try:
+                        res = await client.post(auth_url, data=data)
+                        if res.status_code == 200:
+                            json_data = res.json()
+                            cls._cached_token = json_data.get("access_token")
+                            expires_in = float(json_data.get("expires_in", 3600))
+                            cls._token_expiry = time.time() + max(300.0, expires_in - 60.0)
+                            cls._active_endpoint = proc_url
+                            cls._last_error = None
+                            logger.info(f"Successfully refreshed Sentinel Hub OAuth token via {auth_url} (cached for 1 hour).")
+                            return cls._cached_token
+                        else:
+                            resp_snippet = res.text[:200].replace('\n', ' ')
+                            last_err_msg = f"HTTP {res.status_code} from {auth_url}: {resp_snippet}"
+                            logger.warning(f"Sentinel Hub authentication failed: {last_err_msg}")
+                    except Exception as e:
+                        last_err_msg = f"Network error connecting to {auth_url}: {e}"
+                        logger.warning(last_err_msg)
+
+        cls._last_error = last_err_msg
+        return None
 
     @classmethod
     async def fetch_and_calculate_ndvi(
@@ -88,31 +131,30 @@ class SentinelNDVIService:
         lat: float,
         lon: float,
         hotspot_id: Optional[int] = None
-    ) -> Tuple[Optional[float], bool]:
+    ) -> Tuple[Optional[float], Optional[float], bool]:
         """
         Conditionally triggered for unsuppressed / emergency hotspots.
         Pulls actual Sentinel-2 bands (Red B4, NIR B8, SWIR B11/B12, Blue B2)
-        and computes true pixel-level NDVI.
+        and computes true pixel-level NDVI and NDBI.
 
         Returns:
-            (ndvi_value, ndvi_pending)
-            If credentials or imagery are unavailable, returns (None, True).
+            (ndvi_value, ndbi_value, pending)
+            If credentials or imagery are unavailable, returns (None, None, True).
             NEVER fabricates or mocks placeholder values.
         """
         token = await cls.get_sentinel_token()
         if not token:
             logger.info(
                 f"Sentinel Hub credentials not active or not configured. "
-                f"Preserving data purity for coordinate ({lat}, {lon}): ndvi=None, ndvi_pending=True"
+                f"Preserving data purity for coordinate ({lat}, {lon}): ndvi=None, ndbi=None, pending=True"
             )
-            return None, True
+            return None, None, True
 
-        # If token is available, request 2km x 2km window around coordinates
-        # 0.01 deg is approximately 1.11 km, so +/- 0.009 deg ~= 2km box
+        # Request 2km x 2km window around coordinates
         delta = 0.009
         bbox = [lon - delta, lat - delta, lon + delta, lat + delta]
 
-        process_url = "https://services.sentinel-hub.com/api/v1/process"
+        process_url = cls._active_endpoint or "https://sh.dataspace.copernicus.eu/api/v1/process"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -179,10 +221,11 @@ class SentinelNDVIService:
                             b2 = src.read(1)
                             b4 = src.read(2)  # Red
                             b8 = src.read(3)  # NIR
-                            b11 = src.read(4) # SWIR
-                            b12 = src.read(5) # SWIR
+                            b11 = src.read(4) # SWIR-1
+                            b12 = src.read(5) # SWIR-2
 
                             mean_ndvi = cls.calculate_mean_ndvi(b8, b4)
+                            mean_ndbi = cls.calculate_mean_ndbi(b11, b8)
                             
                             # Stack and save SWIR composite to scratch
                             composite_path = os.path.join(
@@ -204,14 +247,14 @@ class SentinelNDVIService:
                                 dst.write(b11, 2)  # Green channel = SWIR-1
                                 dst.write(b2, 3)   # Blue channel = Blue
 
-                            logger.info(f"Computed real Sentinel-2 NDVI: {mean_ndvi:.4f} for ({lat}, {lon})")
-                            return round(mean_ndvi, 4), False
+                            logger.info(f"Computed real Sentinel-2 NDVI: {mean_ndvi:.4f}, NDBI: {mean_ndbi:.4f} for ({lat}, {lon})")
+                            return round(mean_ndvi, 4), round(mean_ndbi, 4), False
                     except Exception as err:
                         logger.error(f"Error decoding Sentinel-2 TIFF with rasterio: {err}")
-                        return None, True
+                        return None, None, True
                 else:
                     logger.warning(f"Sentinel Hub Process API returned HTTP {res.status_code}: {res.text[:100]}")
-                    return None, True
+                    return None, None, True
         except Exception as e:
             logger.error(f"Exception fetching Sentinel imagery: {e}")
-            return None, True
+            return None, None, True

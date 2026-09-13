@@ -266,7 +266,7 @@ Interactive Swagger Documentation: `http://localhost:8000/docs`
 ## 8. Automated Continuous Polling & WebSocket Broadcasting
 
 The server includes an automated background worker in `app/main.py`:
-* **Frequency**: Runs automatically every 10 minutes (`interval_seconds=600`).
+* **Frequency**: NASA FIRMS satellite ingestion runs automatically every 5 minutes (configurable via `FIRMS_POLL_INTERVAL_SECONDS`, default 300 seconds), while lightweight radar stream heartbeat broadcasts execute every 30 seconds.
 * **Actions Performed**:
   1. Connects to NASA FIRMS Area API and pulls the latest satellite pass across India.
   2. Spatially matches coordinates against OpenStreetMap geofences.

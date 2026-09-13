@@ -13,8 +13,9 @@ export function formatDistance(meters) {
 }
 
 export function getRiskColor(score) {
-  if (score >= 70) return 'text-tactical-red bg-tactical-red/10 border-tactical-red/30';
-  if (score >= 40) return 'text-tactical-amber bg-tactical-amber/10 border-tactical-amber/30';
+  if (score >= 80) return 'text-tactical-red bg-tactical-red/10 border-tactical-red/30';
+  if (score >= 60) return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+  if (score >= 40) return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
   return 'text-tactical-green bg-tactical-green/10 border-tactical-green/30';
 }
 
@@ -24,23 +25,52 @@ export function getClassificationTheme(classification) {
       return {
         badge: 'bg-tactical-red/10 text-tactical-red border-tactical-red/50',
         marker: '#ff1744',
-        label: 'CRITICAL DISASTER',
+        label: 'CRITICAL INDUSTRIAL INCIDENT',
         glow: 'shadow-[inset_0_0_15px_rgba(255,23,68,0.2),0_0_10px_rgba(255,23,68,0.3)]'
       };
     case 'Potential Industrial Thermal Source':
       return {
-        badge: 'bg-tactical-green/10 text-tactical-green border-tactical-green/50',
-        marker: '#00e676',
-        label: 'ROUTINE FLARE (SUPPRESSED)',
-        glow: 'shadow-[inset_0_0_15px_rgba(0,230,118,0.2),0_0_10px_rgba(0,230,118,0.3)]'
+        badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50',
+        marker: '#10b981',
+        label: 'ROUTINE INDUSTRIAL FLARE',
+        glow: 'shadow-[inset_0_0_15px_rgba(16,185,129,0.2),0_0_10px_rgba(16,185,129,0.3)]'
       };
+    case 'Forest Fire / Wildfire':
+      return {
+        badge: 'bg-green-500/10 text-green-400 border-green-500/50',
+        marker: '#22c55e',
+        label: 'FOREST FIRE / WILDFIRE',
+        glow: 'shadow-[inset_0_0_15px_rgba(34,197,94,0.2),0_0_10px_rgba(34,197,94,0.3)]'
+      };
+    case 'Agricultural / Stubble Burning':
+      return {
+        badge: 'bg-amber-500/10 text-amber-400 border-amber-500/50',
+        marker: '#f59e0b',
+        label: 'AGRICULTURAL / STUBBLE',
+        glow: 'shadow-[inset_0_0_15px_rgba(245,158,11,0.2),0_0_10px_rgba(245,158,11,0.3)]'
+      };
+    case 'Mining Area / Coal Mine Fire':
+      return {
+        badge: 'bg-purple-500/10 text-purple-400 border-purple-500/50',
+        marker: '#a855f7',
+        label: 'COAL MINE FIRE',
+        glow: 'shadow-[inset_0_0_15px_rgba(168,85,247,0.2),0_0_10px_rgba(168,85,247,0.3)]'
+      };
+    case 'Urban / Landfill Fire':
+      return {
+        badge: 'bg-rose-500/10 text-rose-400 border-rose-500/50',
+        marker: '#f43f5e',
+        label: 'URBAN / LANDFILL FIRE',
+        glow: 'shadow-[inset_0_0_15px_rgba(244,63,94,0.2),0_0_10px_rgba(244,63,94,0.3)]'
+      };
+    case 'Open Region Thermal Anomaly':
     case 'Non-Industrial Fire':
     default:
       return {
-        badge: 'bg-tactical-amber/10 text-tactical-amber border-tactical-amber/50',
-        marker: '#ff9100',
-        label: 'NON-INDUSTRIAL / BIOMASS',
-        glow: 'shadow-[inset_0_0_15px_rgba(255,145,0,0.2),0_0_10px_rgba(255,145,0,0.3)]'
+        badge: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/50',
+        marker: '#06b6d4',
+        label: 'OPEN REGION ANOMALY',
+        glow: 'shadow-[inset_0_0_15px_rgba(6,182,212,0.2),0_0_10px_rgba(6,182,212,0.3)]'
       };
   }
 }
