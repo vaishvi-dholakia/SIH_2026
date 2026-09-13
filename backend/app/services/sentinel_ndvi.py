@@ -43,44 +43,63 @@ class SentinelNDVIService:
 
     _cached_token: Optional[str] = None
     _token_expiry: float = 0.0
+    _auth_failed_until: float = 0.0
+    _active_process_url: str = "https://sh.dataspace.copernicus.eu/api/v1/process"
 
     @classmethod
     async def get_sentinel_token(cls) -> Optional[str]:
-        """Obtains OAuth2 access token for Sentinel Hub API with in-memory caching."""
+        """
+        Obtains OAuth2 access token.
+        Supports both Copernicus Data Space Ecosystem (CDSE) and Legacy Sentinel Hub OAuth endpoints.
+        """
         import time
 
         # Return cached token if still valid
         if cls._cached_token and time.time() < cls._token_expiry:
             return cls._cached_token
 
+        # Don't retry immediately if authentication failed recently (cache failure for 5 mins)
+        if time.time() < cls._auth_failed_until:
+            return None
+
         client_id = settings.SENTINEL_HUB_CLIENT_ID
         client_secret = settings.SENTINEL_HUB_CLIENT_SECRET
 
-        if not client_id or not client_secret:
+        if not client_id or not client_secret or client_id.startswith("YOUR_") or client_secret.startswith("YOUR_"):
             return None
 
-        url = "https://services.sentinel-hub.com/oauth/token"
+        # Auth endpoints list: CDSE Official Identity Server first, then Legacy Sentinel Hub
+        auth_endpoints = [
+            ("https://identity.dataspace.copernicus.eu/auth/realms/cdse/protocol/openid-connect/token", "https://sh.dataspace.copernicus.eu/api/v1/process"),
+            ("https://services.sentinel-hub.com/oauth/token", "https://services.sentinel-hub.com/api/v1/process")
+        ]
+
         data = {
             "grant_type": "client_credentials",
             "client_id": client_id,
             "client_secret": client_secret
         }
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(url, data=data)
-                if res.status_code == 200:
-                    json_data = res.json()
-                    cls._cached_token = json_data.get("access_token")
-                    expires_in = float(json_data.get("expires_in", 3600))
-                    cls._token_expiry = time.time() + max(300.0, expires_in - 60.0)
-                    logger.info("Successfully refreshed Sentinel Hub OAuth token (cached for 1 hour).")
-                    return cls._cached_token
-                else:
-                    logger.warning(f"Sentinel Hub authentication failed: HTTP {res.status_code}")
-                    return None
-        except Exception as e:
-            logger.warning(f"Error authenticating with Sentinel Hub: {e}")
-            return None
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for token_url, proc_url in auth_endpoints:
+                try:
+                    res = await client.post(token_url, data=data)
+                    if res.status_code == 200:
+                        json_data = res.json()
+                        cls._cached_token = json_data.get("access_token")
+                        expires_in = float(json_data.get("expires_in", 3600))
+                        cls._token_expiry = time.time() + max(300.0, expires_in - 60.0)
+                        cls._auth_failed_until = 0.0
+                        cls._active_process_url = proc_url
+                        logger.info(f"Successfully authenticated with Copernicus/Sentinel OAuth ({token_url}). Cached for 1 hour.")
+                        return cls._cached_token
+                except Exception as e:
+                    logger.debug(f"Auth endpoint {token_url} failed: {e}")
+                    continue
+
+        cls._auth_failed_until = time.time() + 300.0  # Cache failure for 5 minutes
+        logger.warning("Copernicus/Sentinel Hub authentication failed. Check CLIENT_ID and CLIENT_SECRET in .env.")
+        return None
 
     @classmethod
     async def fetch_and_calculate_ndvi(
@@ -112,7 +131,7 @@ class SentinelNDVIService:
         delta = 0.009
         bbox = [lon - delta, lat - delta, lon + delta, lat + delta]
 
-        process_url = "https://services.sentinel-hub.com/api/v1/process"
+        process_url = cls._active_process_url
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
