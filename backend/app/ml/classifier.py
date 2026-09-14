@@ -161,8 +161,8 @@ class DualModelClassifier:
         """
         logger.warning("Using rule-based classification — insufficient real data to train RandomForest yet")
 
-        # 1. Industrial Zone (Refinery / Petrochemical)
-        if distance_to_refinery_m <= 5000.0 or (ndbi is not None and ndbi > 0.35 and distance_to_refinery_m <= 15000.0):
+        # 1. Industrial Zone (Refinery)
+        if distance_to_refinery_m <= 1000.0:
             if persistence_days > 15:
                 return "Potential Industrial Thermal Source", 0.92
             elif frp > 80.0 or anomaly_score > 0.60 or persistence_days <= 2:
@@ -170,38 +170,35 @@ class DualModelClassifier:
             else:
                 return "Potential Industrial Thermal Source", 0.85
         
-        # 2. Agricultural / Stubble Burning (Check farmland proximity before forest fire override)
-        if distance_to_farmland_m <= 30000.0 or (distance_to_farmland_m <= distance_to_forest_m and distance_to_forest_m > 15000.0):
-            return "Agricultural / Stubble Burning", 0.90
+        # 2. Forest Fire
+        if distance_to_forest_m <= 100.0:
+            if ndvi is not None and ndvi > 0.45:
+                return "Forest Fire / Wildfire", 0.90
+            elif ndvi is None:
+                return "Forest Fire / Wildfire", 0.70
 
-        # 3. Forest Fire / Wildfire
-        if distance_to_forest_m <= 30000.0 or (distance_to_forest_m < distance_to_farmland_m and ndvi is not None and ndvi > 0.40):
-            return "Forest Fire / Wildfire", 0.90
+        # 3. Agricultural Fire
+        if distance_to_farmland_m <= 100.0:
+            if ndvi is not None and 0.1 <= ndvi <= 0.25:
+                return "Agricultural / Stubble Burning", 0.90
+            elif ndvi is None:
+                return "Agricultural / Stubble Burning", 0.70
 
         # 4. Mining Fire
-        if distance_to_mining_m <= 30000.0:
-            return "Mining Area / Coal Mine Fire", 0.88
+        if distance_to_mining_m <= 100.0:
+            if persistence_days > 5:
+                return "Mining Area / Coal Mine Fire", 0.85
+            else:
+                return "Mining Area / Coal Mine Fire", 0.70
 
         # 5. Urban / Landfill Fire
         if distance_to_landfill_m <= 15000.0 or distance_to_population_m <= 5000.0:
             return "Urban / Landfill Fire", 0.85
 
-        # 6. Fallback based on nearest regional geofence & thermal intensity
-        if frp > 100.0 or anomaly_score > 0.65:
-            return "Potential Industrial Incident", 0.88
-        
-        min_dist_map = {
-            "Agricultural / Stubble Burning": distance_to_farmland_m,
-            "Forest Fire / Wildfire": distance_to_forest_m,
-            "Mining Area / Coal Mine Fire": distance_to_mining_m,
-            "Urban / Landfill Fire": distance_to_landfill_m,
-            "Potential Industrial Thermal Source": distance_to_refinery_m
-        }
-        closest_type = min(min_dist_map, key=min_dist_map.get)
-        if min_dist_map[closest_type] < 999999.0:
-            return closest_type, 0.82
-        else:
-            return "Open Region Thermal Anomaly", 0.75
+        # Fallback
+        if frp > 120.0 or anomaly_score > 0.7:
+            return "Potential Industrial Incident", 0.60
+        return "Unknown", 0.50
 
     def predict(
         self,
@@ -210,14 +207,13 @@ class DualModelClassifier:
         confidence: float,
         distance_to_refinery_m: float,
         distance_to_population_m: float,
-        distance_to_forest_m: float = 999999.0,
-        distance_to_farmland_m: float = 999999.0,
-        distance_to_mining_m: float = 999999.0,
-        distance_to_landfill_m: float = 999999.0,
-        persistence_days: int = 1,
-        ndvi: Optional[float] = None,
-        ndbi: Optional[float] = None,
-        is_suppressed: bool = False,
+        distance_to_forest_m: float,
+        distance_to_farmland_m: float,
+        distance_to_mining_m: float,
+        distance_to_landfill_m: float,
+        persistence_days: int,
+        ndvi: Optional[float],
+        is_suppressed: bool,
         db: Optional[Session] = None
     ) -> Tuple[str, float, float]:
         """
@@ -343,12 +339,11 @@ class DualModelClassifier:
         elif persistence_days == 1 and frp > 80.0:
             reasons.append("Sudden acute thermal onset (0 past detections in 30 days)")
 
-        # 6. Sentinel-2 Multispectral Indices (NDVI & NDBI)
         if ndvi is not None:
             if ndvi < 0.2:
                 reasons.append(f"Low NDVI ({ndvi:.3f}) matches non-vegetated industrial hardscape/flare pad")
             elif ndvi > 0.4:
-                reasons.append(f"High NDVI ({ndvi:.3f}) indicates surrounding biomass or active agricultural crop canopy")
+                reasons.append(f"High NDVI ({ndvi:.3f}) indicates surrounding biomass or agricultural canopy")
         else:
             reasons.append("NDVI computation pending or bypassed for normal flaring suppression")
 

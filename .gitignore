@@ -1,24 +1,62 @@
-# Node dependencies
+# Dependencies
 node_modules/
 frontend/node_modules/
-
-# Build outputs
-frontend/dist/
-
-# Environment & secrets
-.env
-backend/.env
-frontend/.env
-*.env.local
-
-# Python cache
-__pycache__/
-*.py[cod]
-*.class
+backend/.venv/
 venv/
 .venv/
 
-# Logs
+# Frontend build and tool output
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+frontend/coverage/
+
+# Python build and test output
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Python virtual environments
+.python-version
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Local databases and generated geospatial data
+*.db
+*.sqlite
+*.sqlite3
+backend/scratch/*
+!backend/scratch/.gitkeep
+
+# Logs and local runtime files
 *.log
 backend.log
+*.pid
+
+# IDE and operating-system files
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
 desktop.ini
+Thumbs.db
+
+# OS swap files
+*.swp
+*.swo
+*~
