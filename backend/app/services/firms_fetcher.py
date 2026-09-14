@@ -194,6 +194,7 @@ class FIRMSFetcher:
         ndvi = None
         ndvi_pending = False
 
+        bands_dict = None
         if is_suppressed:
             # Check historical database for any previously recorded real NDVI value at this exact coordinate
             coord_tol = 0.002
@@ -211,7 +212,13 @@ class FIRMSFetcher:
                 ndvi_pending = True
         else:
             # Unsuppressed: Trigger real Sentinel-2 multispectral pipeline
-            ndvi, ndvi_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+            ndvi, bands_dict, ndvi_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+
+        b2_val = bands_dict.get("b2") if bands_dict else None
+        b4_val = bands_dict.get("b4") if bands_dict else None
+        b8_val = bands_dict.get("b8") if bands_dict else None
+        b11_val = bands_dict.get("b11") if bands_dict else None
+        b12_val = bands_dict.get("b12") if bands_dict else None
 
         # Step 4: Dual-Model Inference & Unified Scoring
         classification, model_conf, anomaly_score = classifier_service.predict(
@@ -256,6 +263,12 @@ class FIRMSFetcher:
             if ndvi is not None:
                 hotspot.ndvi = ndvi
                 hotspot.ndvi_pending = False
+            if b2_val is not None:
+                hotspot.b2_reflectance = b2_val
+                hotspot.b4_reflectance = b4_val
+                hotspot.b8_reflectance = b8_val
+                hotspot.b11_reflectance = b11_val
+                hotspot.b12_reflectance = b12_val
             hotspot.persistence_days = persistence_days
             hotspot.distance_to_refinery_m = spatial_res.distance_to_refinery_m
             hotspot.distance_to_population_m = spatial_res.distance_to_population_m
@@ -278,6 +291,11 @@ class FIRMSFetcher:
                 confidence=confidence,
                 ndvi=ndvi,
                 ndvi_pending=ndvi_pending,
+                b2_reflectance=b2_val,
+                b4_reflectance=b4_val,
+                b8_reflectance=b8_val,
+                b11_reflectance=b11_val,
+                b12_reflectance=b12_val,
                 persistence_days=persistence_days,
                 distance_to_refinery_m=spatial_res.distance_to_refinery_m,
                 distance_to_population_m=spatial_res.distance_to_population_m,

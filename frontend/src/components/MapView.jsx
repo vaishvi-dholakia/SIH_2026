@@ -165,18 +165,16 @@ function parseWktPolygon(wkt) {
   }
 }
 
-function MapController({ targetIncident }) {
+function MapController({ targetIncident, resetTrigger }) {
   const map = useMap();
 
   useEffect(() => {
     if (!map) return;
 
-    // Trigger immediate tile invalidate
     try {
       map.invalidateSize();
     } catch (e) {}
 
-    // Attach ResizeObserver to Leaflet container to handle panel collapses & flex shifts
     let resizeObserver;
     try {
       const container = map.getContainer();
@@ -192,15 +190,11 @@ function MapController({ targetIncident }) {
 
     const t1 = setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 100);
     const t2 = setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 350);
-    const t3 = setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 700);
-    const t4 = setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 1200);
 
     return () => {
       if (resizeObserver) resizeObserver.disconnect();
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
     };
   }, [map]);
 
@@ -212,11 +206,19 @@ function MapController({ targetIncident }) {
         if (!isNaN(lat) && !isNaN(lng) && 
             lat >= INDIA_BBOX.MIN_LAT && lat <= INDIA_BBOX.MAX_LAT && 
             lng >= INDIA_BBOX.MIN_LON && lng <= INDIA_BBOX.MAX_LON) {
-          map.flyTo([lat, lng], 12, { duration: 1.5 });
+          map.flyTo([lat, lng], 11, { duration: 1.0, animate: true });
         }
       }
     } catch (e) {}
   }, [targetIncident, map]);
+
+  useEffect(() => {
+    if (map && resetTrigger > 0) {
+      try {
+        map.flyTo([22.50, 78.50], 5, { duration: 1.0, animate: true });
+      } catch (e) {}
+    }
+  }, [resetTrigger, map]);
 
   return null;
 }
@@ -229,7 +231,8 @@ function MapViewInner({
   onSelectHotspot, 
   backendOffline = false 
 }) {
-  const [tileSource, setTileSource] = useState('dark'); // 'dark' | 'esri' | 'osm'
+  const [tileSource, setTileSource] = useState('esri'); // 'esri' | 'osm'
+  const [resetTrigger, setResetTrigger] = useState(0);
 
   const INDIA_CENTER = [22.50, 78.50];
   const INDIA_ZOOM = 5;
@@ -273,7 +276,7 @@ function MapViewInner({
     }
   }
 
-  const defaultZoom = selectedHotspot ? 12 : INDIA_ZOOM;
+  const defaultZoom = selectedHotspot ? 11 : INDIA_ZOOM;
 
   const [layers, setLayers] = useState({
     thermalEvents: true,
@@ -282,14 +285,16 @@ function MapViewInner({
 
   const getTileUrl = () => {
     switch (tileSource) {
-      case 'esri':
-        return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
       case 'osm':
-        return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-      case 'dark':
+        return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}";
+      case 'esri':
       default:
-        return "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{y}/{x}{r}.png";
+        return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
     }
+  };
+
+  const handleResetView = () => {
+    setResetTrigger(prev => prev + 1);
   };
 
   const getSeverityColor = (classification, priority) => {
@@ -305,69 +310,63 @@ function MapViewInner({
   return (
     <div className="space-y-3 font-sans">
       
-      {/* Map Control Toolbar */}
-      <div className="bg-[#151A26] border border-[#262F40] p-3 rounded-xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 text-xs shadow-lg">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-black text-white uppercase font-mono tracking-wider flex items-center gap-1.5">
-              <Compass className="w-4 h-4 text-blue-400" />
-              INDIA GIS TACTICAL SURVEILLANCE DECK
-            </h2>
-            {backendOffline ? (
-              <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
-                ⚠️ Local Engine
-              </span>
-            ) : (
-              <span className="bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
-                FastAPI Live Database
-              </span>
-            )}
+      {/* Sleek Compact Map Control Toolbar (Single Line) */}
+      <div className="bg-[#151A26] border border-[#262F40] px-3.5 py-2 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs shadow-lg font-sans">
+        
+        {/* Left Side: Compact Title & Live Badge */}
+        <div className="flex items-center gap-2 font-mono">
+          <div className="flex items-center gap-1.5 font-bold text-white text-xs">
+            <Compass className="w-4 h-4 text-blue-400 shrink-0" />
+            <span>Satellite Map</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            Tracking <strong className="text-white">{displayIncidents.length} Indian thermal anomalies</strong> (ISRO / NASA South Asia Feed)
-          </p>
+
+          <span className="bg-blue-500/10 text-blue-400 border border-blue-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+            {displayIncidents.length} Active
+          </span>
+
+          {backendOffline ? (
+            <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
+              Local
+            </span>
+          ) : (
+            <span className="bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+              Live
+            </span>
+          )}
         </div>
 
-        {/* Map Controls */}
-        <div className="flex flex-wrap items-center gap-3 bg-[#0B0E14] px-3 py-2 rounded-lg border border-[#262F40] text-xs">
+        {/* Right Side: Inline Controls on Single Row */}
+        <div className="flex flex-wrap items-center gap-2">
           
           {/* Base Layer Switcher */}
-          <div className="flex items-center gap-1 bg-[#151A26] p-1 rounded border border-[#262F40]">
-            <button
-              onClick={() => setTileSource('osm')}
-              className={`px-2.5 py-1 rounded transition-colors text-[11px] ${tileSource === 'osm' ? 'bg-[#1D4ED8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
-            >
-              OpenStreetMap
-            </button>
+          <div className="flex items-center gap-1 bg-[#0B0E14] p-1 rounded-lg border border-[#262F40]">
             <button
               onClick={() => setTileSource('esri')}
-              className={`px-2.5 py-1 rounded transition-colors text-[11px] ${tileSource === 'esri' ? 'bg-[#1D4ED8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2.5 py-0.5 rounded transition-colors text-[11px] font-semibold ${tileSource === 'esri' ? 'bg-[#1D4ED8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
             >
-              Esri High-Res
+              Satellite
             </button>
             <button
-              onClick={() => setTileSource('dark')}
-              className={`px-2.5 py-1 rounded transition-colors text-[11px] ${tileSource === 'dark' ? 'bg-[#1D4ED8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+              onClick={() => setTileSource('osm')}
+              className={`px-2.5 py-0.5 rounded transition-colors text-[11px] font-semibold ${tileSource === 'osm' ? 'bg-[#1D4ED8] text-white font-bold' : 'text-slate-400 hover:text-white'}`}
             >
-              Dark Radar
+              Street
             </button>
           </div>
 
-          <div className="h-4 w-px bg-[#262F40]"></div>
-
           {/* Layer Toggles */}
-          <label className="flex items-center gap-1.5 cursor-pointer bg-[#151A26] px-2.5 py-1 rounded border border-[#262F40]">
+          <label className="flex items-center gap-1.5 cursor-pointer bg-[#0B0E14] px-2.5 py-1 rounded-lg border border-[#262F40] text-[11px]">
             <input
               type="checkbox"
               checked={layers.thermalEvents}
               onChange={(e) => setLayers({ ...layers, thermalEvents: e.target.checked })}
               className="accent-red-500 rounded cursor-pointer"
             />
-            <span className="text-slate-200 font-medium">🔥 Indian Hotspots</span>
+            <span className="text-slate-200 font-medium">🔥 Hotspots</span>
           </label>
 
-          <label className="flex items-center gap-1.5 cursor-pointer bg-[#151A26] px-2.5 py-1 rounded border border-[#262F40]">
+          <label className="flex items-center gap-1.5 cursor-pointer bg-[#0B0E14] px-2.5 py-1 rounded-lg border border-[#262F40] text-[11px]">
             <input
               type="checkbox"
               checked={layers.industrialAreas}
@@ -376,7 +375,18 @@ function MapViewInner({
             />
             <span className="text-slate-200 font-medium">🏭 Refineries</span>
           </label>
+
+          {/* Recenter / Reset View Button */}
+          <button
+            onClick={handleResetView}
+            className="bg-[#0B0E14] hover:bg-[#151A26] text-blue-400 hover:text-white px-2.5 py-1 rounded-lg border border-[#262F40] text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+            title="Recenter India Map View"
+          >
+            <Compass className="w-3.5 h-3.5" />
+            <span>Recenter 🇮🇳</span>
+          </button>
         </div>
+
       </div>
 
       {/* Main Indian Map Viewport */}
@@ -384,23 +394,25 @@ function MapViewInner({
         <MapContainer
           center={defaultCenter}
           zoom={defaultZoom}
-          minZoom={4}
+          minZoom={3}
           maxZoom={18}
-          maxBounds={[[3.0, 60.0], [39.0, 100.0]]}
-          maxBoundsViscosity={0.5}
           scrollWheelZoom={true}
+          doubleClickZoom={true}
+          touchZoom={true}
+          dragging={true}
+          zoomControl={true}
           preferCanvas={true}
           className="w-full h-full z-10"
           style={{ height: '620px', width: '100%', backgroundColor: '#0B0E14' }}
         >
-          <MapController targetIncident={targetIncident || selectedHotspot} />
+          <MapController targetIncident={targetIncident || selectedHotspot} resetTrigger={resetTrigger} />
 
           {/* Direct Dynamic Tile Layer */}
           <TileLayer
-            attribution='&copy; OpenStreetMap & Esri & CartoDB'
+            key={tileSource}
+            attribution='&copy; Esri World Imagery & Esri Street Map'
             url={getTileUrl()}
-            subdomains="abcd"
-            maxZoom={18}
+            maxZoom={19}
           />
 
           {/* Indian Refinery Geofence Polygons */}

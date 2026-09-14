@@ -139,25 +139,27 @@ class DualModelClassifier:
         """
         logger.warning("Using rule-based classification — insufficient real data to train RandomForest yet")
 
-        # 1. Industrial Zone (Refinery / Petrochemical)
-        if distance_to_refinery_m <= 5000.0:
-            if persistence_days > 15:
+        # 1. Industrial Zone (Refinery / Petrochemical / LPG Plant)
+        valid_ndvi = ndvi if (ndvi is not None and ndvi != 0.0) else None
+
+        if distance_to_refinery_m <= 15000.0 or (distance_to_refinery_m <= 25000.0 and (valid_ndvi is None or valid_ndvi < 0.25)):
+            if is_suppressed or persistence_days > 15:
                 return "Potential Industrial Thermal Source", 0.92
             elif frp > 80.0 or anomaly_score > 0.60 or persistence_days <= 2:
                 return "Potential Industrial Incident", 0.95
             else:
                 return "Potential Industrial Thermal Source", 0.85
         
-        # 2. Forest Fire
-        if distance_to_forest_m <= 30000.0 or (ndvi is not None and ndvi > 0.40):
+        # 2. Forest Fire (requires forest proximity and away from industrial facilities)
+        if (distance_to_forest_m <= 5000.0 or (distance_to_forest_m <= 15000.0 and (valid_ndvi is None or valid_ndvi >= 0.25)) or (valid_ndvi is not None and valid_ndvi > 0.40)) and distance_to_refinery_m > 15000.0:
             return "Forest Fire / Wildfire", 0.90
 
         # 3. Agricultural Fire
-        if distance_to_farmland_m <= 30000.0 or (ndvi is not None and 0.1 <= ndvi <= 0.35):
+        if (distance_to_farmland_m <= 15000.0 or (valid_ndvi is not None and 0.15 <= valid_ndvi <= 0.35)) and distance_to_refinery_m > 15000.0:
             return "Agricultural / Stubble Burning", 0.90
 
         # 4. Mining Fire
-        if distance_to_mining_m <= 30000.0:
+        if distance_to_mining_m <= 15000.0:
             return "Mining Area / Coal Mine Fire", 0.88
 
         # 5. Urban / Landfill Fire
@@ -345,11 +347,33 @@ class DualModelClassifier:
         elif persistence_days == 1 and frp > 80.0:
             reasons.append("Sudden acute thermal onset (0 past detections in 30 days)")
 
-        if ndvi is not None:
-            if ndvi < 0.2:
-                reasons.append(f"Low NDVI ({ndvi:.3f}) matches non-vegetated industrial hardscape/flare pad")
-            elif ndvi > 0.4:
-                reasons.append(f"High NDVI ({ndvi:.3f}) indicates surrounding biomass or agricultural canopy")
+        valid_ndvi = ndvi if (ndvi is not None and ndvi != 0.0) else None
+
+        if valid_ndvi is not None:
+            if classification in ["Potential Industrial Incident", "Potential Industrial Thermal Source"]:
+                if valid_ndvi < 0.2:
+                    reasons.append(f"Low NDVI ({valid_ndvi:.3f}) matches non-vegetated industrial hardscape/flare pad")
+                else:
+                    reasons.append(f"NDVI ({valid_ndvi:.3f}) measured over industrial perimeter")
+            elif classification == "Forest Fire / Wildfire":
+                if valid_ndvi >= 0.4:
+                    reasons.append(f"High NDVI ({valid_ndvi:.3f}) confirms dense forest biomass canopy burn zone")
+                elif valid_ndvi >= 0.2:
+                    reasons.append(f"Moderate NDVI ({valid_ndvi:.3f}) indicates woodland / shrubland vegetation")
+                else:
+                    reasons.append(f"Low NDVI ({valid_ndvi:.3f}) reflects active fire burn scar / vegetation loss")
+            elif classification == "Agricultural / Stubble Burning":
+                if 0.1 <= valid_ndvi <= 0.35:
+                    reasons.append(f"NDVI ({valid_ndvi:.3f}) matches post-harvest cropland / stubble ground")
+                elif valid_ndvi > 0.35:
+                    reasons.append(f"High NDVI ({valid_ndvi:.3f}) indicates active agricultural vegetation")
+                else:
+                    reasons.append(f"Low NDVI ({valid_ndvi:.3f}) matches cleared / burnt crop residue")
+            else:
+                if valid_ndvi < 0.2:
+                    reasons.append(f"Low NDVI ({valid_ndvi:.3f}) indicates non-vegetated ground")
+                else:
+                    reasons.append(f"NDVI ({valid_ndvi:.3f}) recorded")
         else:
             reasons.append("NDVI computation pending or bypassed for normal flaring suppression")
 

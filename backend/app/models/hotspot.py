@@ -16,6 +16,13 @@ class ActiveHotspot(Base):
     # Real Sentinel-2 calculated NDVI value at hotspot location, Null if pending/unavailable
     ndvi = Column(Float, nullable=True)
     ndvi_pending = Column(Boolean, default=False, nullable=False)
+
+    # Sentinel-2 Spectral Band Reflectances (B02, B04, B08, B11, B12)
+    b2_reflectance = Column(Float, nullable=True)
+    b4_reflectance = Column(Float, nullable=True)
+    b8_reflectance = Column(Float, nullable=True)
+    b11_reflectance = Column(Float, nullable=True)
+    b12_reflectance = Column(Float, nullable=True)
     
     persistence_days = Column(Integer, default=1, nullable=False)
     distance_to_refinery_m = Column(Float, nullable=False, default=999999.0)

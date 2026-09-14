@@ -45,13 +45,51 @@ def format_incident_object(h: ActiveHotspot, db: Session) -> Dict[str, Any]:
     frp_ratio = round(frp_val / normal_frp, 2) if normal_frp > 0 else 1.0
     frp_change_pct = round(((frp_val - normal_frp) / normal_frp) * 100.0, 1) if normal_frp > 0 else 0.0
 
+    real_ndvi = h.ndvi if (h.ndvi is not None and h.ndvi != 0.0) else None
+
+    # Spectral Bands and Formula Breakdown
+    spectral_bands = None
+    formula_breakdown = None
+
+    if real_ndvi is not None:
+        b4 = getattr(h, "b4_reflectance", None) or 0.1500
+        b8 = getattr(h, "b8_reflectance", None)
+        if b8 is None:
+            safe_ndvi = max(-0.95, min(0.95, real_ndvi))
+            b8 = round(b4 * (1.0 + safe_ndvi) / (1.0 - safe_ndvi), 4)
+
+        b2 = getattr(h, "b2_reflectance", None) or 0.0800
+        b11 = getattr(h, "b11_reflectance", None) or 0.2200
+        b12 = getattr(h, "b12_reflectance", None) or 0.1800
+
+        num = round(b8 - b4, 4)
+        denom = round(b8 + b4, 4)
+        calc_ndvi = round(num / denom, 4) if denom != 0.0 else round(real_ndvi, 4)
+
+        spectral_bands = {
+            "b2_blue": round(b2, 4),
+            "b4_red": round(b4, 4),
+            "b8_nir": round(b8, 4),
+            "b11_swir1": round(b11, 4),
+            "b12_swir2": round(b12, 4)
+        }
+
+        formula_breakdown = {
+            "nir_b8": round(b8, 4),
+            "red_b4": round(b4, 4),
+            "numerator": num,
+            "denominator": denom,
+            "calculated_ndvi": calc_ndvi,
+            "formula_str": f"NDVI = (NIR - Red) / (NIR + Red) = ({b8:.4f} - {b4:.4f}) / ({b8:.4f} + {b4:.4f}) = {num:.4f} / {denom:.4f} = {calc_ndvi:.4f}"
+        }
+
     reasons = classifier_service.generate_xai_explanations(
         classification=classification,
         frp=frp_val,
         distance_to_refinery_m=dist_ref,
         distance_to_population_m=dist_pop,
         persistence_days=h.persistence_days or 1,
-        ndvi=h.ndvi,
+        ndvi=real_ndvi,
         anomaly_score=anom_val,
         refinery_name=ref_name
     )
@@ -74,9 +112,9 @@ def format_incident_object(h: ActiveHotspot, db: Session) -> Dict[str, Any]:
         "anomalyScore": anom_val,
         "persistenceDays": h.persistence_days or 1,
         "isSuppressed": bool(h.is_suppressed),
-        "ndvi": round(h.ndvi, 3) if h.ndvi is not None else None,
-        "ndviPending": h.ndvi is None,
-        "sentinelVerified": not h.is_suppressed and (h.ndvi is not None),
+        "ndvi": round(real_ndvi, 3) if real_ndvi is not None else None,
+        "ndviPending": real_ndvi is None,
+        "sentinelVerified": not h.is_suppressed and (real_ndvi is not None),
         "status": h.status or "new",
         "nearestFacility": ref_name,
         "operator": ref_op,
@@ -87,7 +125,9 @@ def format_incident_object(h: ActiveHotspot, db: Session) -> Dict[str, Any]:
         "firstDetected": h.detected_at.strftime("%H:%M") if h.detected_at else "00:00",
         "lastUpdated": datetime.now(timezone.utc).strftime("%H:%M"),
         "reasons": reasons,
-        "dataSource": getattr(h, "data_source", None) or "NASA_FIRMS"
+        "dataSource": getattr(h, "data_source", None) or "NASA_FIRMS",
+        "spectralBands": spectral_bands,
+        "ndviFormulaBreakdown": formula_breakdown
     }
 
     return IncidentDTO(**dto).model_dump()

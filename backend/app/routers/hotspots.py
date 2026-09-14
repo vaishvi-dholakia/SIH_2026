@@ -43,10 +43,13 @@ def get_realtime_hotspots(
 
     features = []
     for h in hotspots:
+        real_ndvi = h.ndvi if (h.ndvi is not None and h.ndvi != 0.0) else None
+        is_pending = h.ndvi_pending or real_ndvi is None
+
         reason = (
-            f"Calculated Real Sentinel-2 NDVI ({round(h.ndvi, 4)})" if h.ndvi is not None
+            f"Calculated Real Sentinel-2 NDVI ({round(real_ndvi, 4)})" if real_ndvi is not None
             else "Suppressed Routine Industrial Flare (API Quota Protection)" if h.is_suppressed
-            else "Pending Sentinel-2 Satellite Imagery Pass" if h.ndvi_pending
+            else "Pending Sentinel-2 Satellite Imagery Pass" if is_pending
             else "Not Available"
         )
         features.append(HotspotGeoJSONFeature(
@@ -60,8 +63,8 @@ def get_realtime_hotspots(
                 "brightness": h.brightness,
                 "frp": h.frp,
                 "confidence": h.confidence,
-                "ndvi": h.ndvi,
-                "ndvi_pending": h.ndvi_pending,
+                "ndvi": real_ndvi,
+                "ndvi_pending": is_pending,
                 "ndvi_status_reason": reason,
                 "persistence_days": h.persistence_days,
                 "distance_to_refinery_m": h.distance_to_refinery_m,

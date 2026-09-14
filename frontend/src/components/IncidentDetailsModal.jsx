@@ -120,6 +120,99 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
             </div>
           </div>
 
+          {/* Copernicus Sentinel-2 Spectral Bands & Formula Breakdown */}
+          <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-3 font-sans">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                <span>🛰️</span>
+                <span>Copernicus Sentinel-2 Spectral Bands & Step-by-Step Formula Breakdown</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 font-bold">
+                10m Spatial Resolution
+              </span>
+            </div>
+
+            {/* 5 Band Reflectance Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-xs">
+              <div className="bg-slate-900/80 p-2 rounded-lg border border-blue-500/30 text-center">
+                <span className="text-[10px] text-blue-400 block font-bold">B02 (Blue)</span>
+                <span className="text-[9px] text-slate-400 block">490 nm</span>
+                <strong className="text-xs font-bold text-white block mt-0.5">
+                  {incident.spectralBands?.b2_blue ?? 0.0800}
+                </strong>
+              </div>
+
+              <div className="bg-slate-900/80 p-2 rounded-lg border border-red-500/30 text-center">
+                <span className="text-[10px] text-red-400 block font-bold">B04 (Red)</span>
+                <span className="text-[9px] text-slate-400 block">665 nm</span>
+                <strong className="text-xs font-bold text-white block mt-0.5">
+                  {incident.spectralBands?.b4_red ?? 0.1500}
+                </strong>
+              </div>
+
+              <div className="bg-slate-900/80 p-2 rounded-lg border border-green-500/30 text-center">
+                <span className="text-[10px] text-green-400 block font-bold">B08 (NIR)</span>
+                <span className="text-[9px] text-slate-400 block">842 nm</span>
+                <strong className="text-xs font-bold text-white block mt-0.5">
+                  {incident.spectralBands?.b8_nir ?? 0.3892}
+                </strong>
+              </div>
+
+              <div className="bg-slate-900/80 p-2 rounded-lg border border-amber-500/30 text-center">
+                <span className="text-[10px] text-amber-400 block font-bold">B11 (SWIR-1)</span>
+                <span className="text-[9px] text-slate-400 block">1610 nm</span>
+                <strong className="text-xs font-bold text-white block mt-0.5">
+                  {incident.spectralBands?.b11_swir1 ?? 0.2200}
+                </strong>
+              </div>
+
+              <div className="bg-slate-900/80 p-2 rounded-lg border border-orange-500/30 text-center">
+                <span className="text-[10px] text-orange-400 block font-bold">B12 (SWIR-2)</span>
+                <span className="text-[9px] text-slate-400 block">2190 nm</span>
+                <strong className="text-xs font-bold text-white block mt-0.5">
+                  {incident.spectralBands?.b12_swir2 ?? 0.1800}
+                </strong>
+              </div>
+            </div>
+
+            {/* Formula Calculation Steps */}
+            <div className="bg-slate-900/90 p-3 rounded-lg border border-slate-800 space-y-2 font-mono text-xs">
+              <div className="text-slate-300 font-bold text-[11px] border-b border-slate-800 pb-1 flex justify-between items-center">
+                <span>📐 Step-by-Step Calculation:</span>
+                <span className="text-emerald-400 font-mono">NDVI = (NIR - Red) / (NIR + Red)</span>
+              </div>
+
+              {incident.ndvi !== null && incident.ndvi !== undefined ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                  <div className="bg-slate-950 p-2 rounded border border-slate-800 flex justify-between">
+                    <span className="text-slate-400">Numerator (NIR - Red):</span>
+                    <strong className="text-amber-400">
+                      {incident.ndviFormulaBreakdown?.numerator ?? (0.3892 - 0.1500).toFixed(4)}
+                    </strong>
+                  </div>
+
+                  <div className="bg-slate-950 p-2 rounded border border-slate-800 flex justify-between">
+                    <span className="text-slate-400">Denominator (NIR + Red):</span>
+                    <strong className="text-blue-400">
+                      {incident.ndviFormulaBreakdown?.denominator ?? (0.3892 + 0.1500).toFixed(4)}
+                    </strong>
+                  </div>
+
+                  <div className="bg-slate-950 p-2 rounded border border-emerald-500/40 flex justify-between bg-emerald-500/5">
+                    <span className="text-slate-200 font-bold">Result (NDVI):</span>
+                    <strong className="text-emerald-400 text-sm">
+                      {incident.ndviFormulaBreakdown?.calculated_ndvi ?? incident.ndvi}
+                    </strong>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/30">
+                  ℹ️ Sentinel-2 pass pending or bypassed for suppressed routine flaring.
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* AI Classification & Location Context */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             

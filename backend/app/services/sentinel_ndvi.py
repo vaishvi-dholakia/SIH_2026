@@ -36,10 +36,28 @@ class SentinelNDVIService:
         return np.clip(ndvi, -1.0, 1.0)
 
     @classmethod
-    def calculate_mean_ndvi(cls, nir: np.ndarray, red: np.ndarray) -> float:
-        """Calculates mean NDVI value across the cropped matrix."""
-        ndvi_arr = cls.calculate_ndvi_array(nir, red)
-        return float(np.nanmean(ndvi_arr))
+    def calculate_mean_ndvi(cls, nir: np.ndarray, red: np.ndarray) -> Optional[float]:
+        """Calculates mean NDVI value strictly across valid non-zero reflectance pixels."""
+        nir_f = nir.astype(float)
+        red_f = red.astype(float)
+        
+        # Mask out zero / no-data background pixels
+        valid_mask = (nir_f > 0.0) | (red_f > 0.0)
+        if not np.any(valid_mask):
+            return None
+
+        denom = nir_f + red_f
+        numer = nir_f - red_f
+        
+        out_arr = np.full_like(numer, np.nan, dtype=float)
+        np.divide(numer, denom, out=out_arr, where=(denom != 0.0) & valid_mask)
+        
+        valid_ndvis = out_arr[~np.isnan(out_arr)]
+        if len(valid_ndvis) == 0:
+            return None
+            
+        mean_val = float(np.mean(valid_ndvis))
+        return float(np.clip(mean_val, -1.0, 1.0))
 
     _cached_token: Optional[str] = None
     _token_expiry: float = 0.0
@@ -114,8 +132,8 @@ class SentinelNDVIService:
         and computes true pixel-level NDVI.
 
         Returns:
-            (ndvi_value, ndvi_pending)
-            If credentials or imagery are unavailable, returns (None, True).
+            (ndvi_value, bands_dict, ndvi_pending)
+            If credentials or imagery are unavailable, returns (None, None, True).
             NEVER fabricates or mocks placeholder values.
         """
         token = await cls.get_sentinel_token()
@@ -124,7 +142,7 @@ class SentinelNDVIService:
                 f"Sentinel Hub credentials not active or not configured. "
                 f"Preserving data purity for coordinate ({lat}, {lon}): ndvi=None, ndvi_pending=True"
             )
-            return None, True
+            return None, None, True
 
         # If token is available, request 2km x 2km window around coordinates
         # 0.01 deg is approximately 1.11 km, so +/- 0.009 deg ~= 2km box
@@ -198,11 +216,29 @@ class SentinelNDVIService:
                             b2 = src.read(1)
                             b4 = src.read(2)  # Red
                             b8 = src.read(3)  # NIR
-                            b11 = src.read(4) # SWIR
-                            b12 = src.read(5) # SWIR
+                            b11 = src.read(4) # SWIR-1
+                            b12 = src.read(5) # SWIR-2
 
+                            valid_mask = (b8.astype(float) > 0.0) | (b4.astype(float) > 0.0)
                             mean_ndvi = cls.calculate_mean_ndvi(b8, b4)
+                            if mean_ndvi is None:
+                                logger.info(f"Sentinel-2 imagery for ({lat}, {lon}) returned no valid reflectance pixels: setting ndvi=None, ndvi_pending=True")
+                                return None, None, True
                             
+                            b2_val = round(float(np.mean(b2[valid_mask])), 4) if np.any(valid_mask) else 0.0800
+                            b4_val = round(float(np.mean(b4[valid_mask])), 4) if np.any(valid_mask) else 0.1500
+                            b8_val = round(float(np.mean(b8[valid_mask])), 4) if np.any(valid_mask) else 0.3890
+                            b11_val = round(float(np.mean(b11[valid_mask])), 4) if np.any(valid_mask) else 0.2200
+                            b12_val = round(float(np.mean(b12[valid_mask])), 4) if np.any(valid_mask) else 0.1800
+
+                            bands_dict = {
+                                "b2": b2_val,
+                                "b4": b4_val,
+                                "b8": b8_val,
+                                "b11": b11_val,
+                                "b12": b12_val
+                            }
+
                             # Stack and save SWIR composite to scratch
                             composite_path = os.path.join(
                                 SCRATCH_DIR,
@@ -224,13 +260,15 @@ class SentinelNDVIService:
                                 dst.write(b2, 3)   # Blue channel = Blue
 
                             logger.info(f"Computed real Sentinel-2 NDVI: {mean_ndvi:.4f} for ({lat}, {lon})")
-                            return round(mean_ndvi, 4), False
+                            return round(mean_ndvi, 4), bands_dict, False
                     except Exception as err:
                         logger.error(f"Error decoding Sentinel-2 TIFF with rasterio: {err}")
-                        return None, True
+                        return None, None, True
                 else:
                     logger.warning(f"Sentinel Hub Process API returned HTTP {res.status_code}: {res.text[:100]}")
-                    return None, True
+                    return None, None, True
         except Exception as e:
+            logger.error(f"Failed fetching Sentinel-2 bands: {e}")
+            return None, None, True
             logger.error(f"Exception fetching Sentinel imagery: {e}")
             return None, True

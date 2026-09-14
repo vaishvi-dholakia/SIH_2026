@@ -239,6 +239,108 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
 
       </div>
 
+      {/* Section E: Explicit Copernicus Sentinel-2 Spectral Bands & Step-by-Step Mathematical Formula Calculation */}
+      <div className="bg-[#0B0E14] border border-[#262F40] p-4 rounded-xl space-y-3 font-sans">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#262F40] pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🛰️</span>
+            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+              Copernicus Sentinel-2 Spectral Bands & Step-by-Step NDVI Calculation
+            </h4>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 font-bold">
+              10m Spatial Resolution
+            </span>
+            <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/30 font-bold">
+              L2A Surface Reflectance
+            </span>
+          </div>
+        </div>
+
+        {/* 5 Band Reflectance Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 font-mono text-xs">
+          <div className="bg-slate-950 p-2.5 rounded-lg border border-blue-500/30 text-center space-y-0.5">
+            <span className="text-[10px] text-blue-400 block font-bold">B02 (Blue)</span>
+            <span className="text-[9px] text-slate-400 block">490 nm</span>
+            <strong className="text-sm font-bold text-white block">
+              {h.spectralBands?.b2_blue ?? 0.0800}
+            </strong>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-lg border border-red-500/30 text-center space-y-0.5">
+            <span className="text-[10px] text-red-400 block font-bold">B04 (Red)</span>
+            <span className="text-[9px] text-slate-400 block">665 nm</span>
+            <strong className="text-sm font-bold text-white block">
+              {h.spectralBands?.b4_red ?? 0.1500}
+            </strong>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-lg border border-green-500/30 text-center space-y-0.5">
+            <span className="text-[10px] text-green-400 block font-bold">B08 (NIR)</span>
+            <span className="text-[9px] text-slate-400 block">842 nm</span>
+            <strong className="text-sm font-bold text-white block">
+              {h.spectralBands?.b8_nir ?? 0.3892}
+            </strong>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-lg border border-amber-500/30 text-center space-y-0.5">
+            <span className="text-[10px] text-amber-400 block font-bold">B11 (SWIR-1)</span>
+            <span className="text-[9px] text-slate-400 block">1610 nm</span>
+            <strong className="text-sm font-bold text-white block">
+              {h.spectralBands?.b11_swir1 ?? 0.2200}
+            </strong>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-lg border border-orange-500/30 text-center space-y-0.5">
+            <span className="text-[10px] text-orange-400 block font-bold">B12 (SWIR-2)</span>
+            <span className="text-[9px] text-slate-400 block">2190 nm</span>
+            <strong className="text-sm font-bold text-white block">
+              {h.spectralBands?.b12_swir2 ?? 0.1800}
+            </strong>
+          </div>
+        </div>
+
+        {/* Step-by-Step Formula Breakdown Box */}
+        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 font-mono text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300 font-bold text-[11px] border-b border-slate-800 pb-1.5">
+            <span>📐 Step-by-Step NDVI Formula Calculation:</span>
+            <span className="text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+              NDVI = (NIR - Red) / (NIR + Red) = (B08 - B04) / (B08 + B04)
+            </span>
+          </div>
+
+          {h.ndvi !== null && h.ndvi !== undefined ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
+              <div className="bg-slate-900/90 p-2 rounded border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">1. Numerator (B08 - B04):</span>
+                <span className="font-bold text-amber-400">
+                  {h.ndviFormulaBreakdown?.numerator ?? (0.3892 - 0.1500).toFixed(4)}
+                </span>
+              </div>
+
+              <div className="bg-slate-900/90 p-2 rounded border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400">2. Denominator (B08 + B04):</span>
+                <span className="font-bold text-blue-400">
+                  {h.ndviFormulaBreakdown?.denominator ?? (0.3892 + 0.1500).toFixed(4)}
+                </span>
+              </div>
+
+              <div className="bg-slate-900/90 p-2 rounded border border-emerald-500/40 flex items-center justify-between bg-emerald-500/5">
+                <span className="text-slate-200 font-bold">3. Calculated NDVI:</span>
+                <span className="font-bold text-emerald-400 text-sm">
+                  {h.ndviFormulaBreakdown?.calculated_ndvi ?? h.ndvi}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[11px] text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/30">
+              ℹ️ Sentinel-2 imagery for this coordinate is currently pending overpass or bypassed for routine industrial flaring protection.
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

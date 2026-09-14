@@ -37,6 +37,8 @@ class IncidentDTO(BaseModel):
     lastUpdated: str = Field(..., description="HH:MM UTC time string")
     reasons: List[str] = Field(default_factory=list, description="XAI contributing factors")
     dataSource: str = Field("NASA_FIRMS", description="NASA_FIRMS or SIMULATION")
+    spectralBands: Optional[Dict[str, float]] = None
+    ndviFormulaBreakdown: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True

@@ -41,13 +41,24 @@ async def reclassify_all():
             h.distance_to_landfill_m = spatial_res.distance_to_landfill_m
             h.nearest_refinery_id = spatial_res.nearest_refinery_id
 
-            # If NDVI is pending or None, attempt to fetch real Copernicus Sentinel-2 NDVI
-            if h.ndvi is None:
-                new_ndvi, pending = await SentinelNDVIService.fetch_and_calculate_ndvi(h.latitude, h.longitude, h.id)
+            # If NDVI is pending, None, or stale 0.0, attempt Sentinel-2 fetch
+            if h.ndvi is None or h.ndvi == 0.0:
+                new_ndvi, bands_dict, pending = await SentinelNDVIService.fetch_and_calculate_ndvi(h.latitude, h.longitude, h.id)
                 if new_ndvi is not None:
                     h.ndvi = new_ndvi
                     h.ndvi_pending = False
+                    if bands_dict:
+                        h.b2_reflectance = bands_dict.get("b2")
+                        h.b4_reflectance = bands_dict.get("b4")
+                        h.b8_reflectance = bands_dict.get("b8")
+                        h.b11_reflectance = bands_dict.get("b11")
+                        h.b12_reflectance = bands_dict.get("b12")
                     ndvi_updated += 1
+                else:
+                    h.ndvi = None
+                    h.ndvi_pending = True
+
+            eff_ndvi = h.ndvi if (h.ndvi is not None and h.ndvi != 0.0) else None
 
             cls_name, conf, anomaly_score = classifier_service.predict(
                 brightness=h.brightness or 320.0,
@@ -60,7 +71,7 @@ async def reclassify_all():
                 distance_to_mining_m=spatial_res.distance_to_mining_m,
                 distance_to_landfill_m=spatial_res.distance_to_landfill_m,
                 persistence_days=h.persistence_days or 1,
-                ndvi=h.ndvi,
+                ndvi=eff_ndvi,
                 is_suppressed=bool(h.is_suppressed),
                 db=db
             )
