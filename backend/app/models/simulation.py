@@ -12,7 +12,6 @@ class SimulatedHotspot(Base):
     frp = Column(Float, nullable=False)
     confidence = Column(Float, nullable=False)
     ndvi = Column(Float, nullable=True)
-    ndbi = Column(Float, nullable=True)
     persistence_days = Column(Integer, default=1)
     distance_to_refinery_m = Column(Float, default=999999.0)
     distance_to_population_m = Column(Float, default=999999.0)

@@ -95,3 +95,23 @@ def calculate_unified_hazard_score(
 
     # Cap strictly between 0 and 100
     return int(max(0, min(100, round(score))))
+
+def calculate_priority_threat_score(
+    frp: float,
+    anomaly_score: float,
+    pop_proximity_km: float,
+    facility_dist_km: float
+) -> int:
+    """
+    Calculates a normalized 0 to 100 Priority Threat Score per Module 5 Master Prompt.
+    Formula:
+    Threat Score = (FRP_norm * 0.40) + (Anomaly_norm * 0.25) + (PopProximity_norm * 0.20) + (FacilityDist_norm * 0.15)
+    """
+    frp_norm = min(frp / 500.0, 1.0) * 100.0
+    anomaly_norm = max(0.0, (1.0 - anomaly_score) / 2.0) * 100.0
+    pop_norm = max(0.0, (10.0 - pop_proximity_km) / 10.0) * 100.0
+    dist_norm = max(0.0, (5.0 - facility_dist_km) / 5.0) * 100.0
+
+    score = (frp_norm * 0.40) + (anomaly_norm * 0.25) + (pop_norm * 0.20) + (dist_norm * 0.15)
+    return int(max(0, min(100, round(score))))
+

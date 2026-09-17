@@ -14,12 +14,12 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans select-text">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans select-text print:p-0 print:bg-white">
       
-      <div className="bg-[#151A26] border border-[#262F40] rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6 p-6 text-slate-100 relative print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
+      <div className="print-modal-container bg-[#242424] border border-[#383838] rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6 p-6 text-[#F5F5F5] relative print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
         
         {/* Header Bar */}
-        <div className="flex items-center justify-between border-b border-[#262F40] pb-4 print:hidden">
+        <div className="flex items-center justify-between border-b border-[#383838] pb-4 print:hidden gap-3">
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-6 h-6 text-red-500" />
             <div>
@@ -33,16 +33,20 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handlePrint}
-              className="px-4 py-2 bg-[#1D4ED8] hover:bg-blue-600 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+            {/* Single Unified Export / Save PDF Option */}
+            <a
+              href={`http://localhost:8000/api/reports/incident/${h.id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-5 py-2.5 bg-[#1D4ED8] hover:bg-blue-600 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-2 shadow-lg cursor-pointer text-decoration-none active:scale-95"
+              title="Export and Save Official 1-Page Forensic Incident Report PDF"
             >
               <Printer className="w-4 h-4" />
-              <span>PRINT / SAVE PDF</span>
-            </button>
+              <span>PRINT & SAVE PDF</span>
+            </a>
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -53,12 +57,12 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
         <div className="space-y-5 print:space-y-4 print:text-black">
           
           {/* Document Title Header */}
-          <div className="bg-[#0B0E14] border border-[#262F40] p-4 rounded-xl flex items-center justify-between print:bg-slate-100 print:border-slate-300">
+          <div className="bg-[#161616] border border-[#383838] p-4 rounded-xl flex items-center justify-between print:bg-slate-100 print:border-slate-300">
             <div>
               <span className="text-xs font-mono font-bold text-blue-400 uppercase tracking-widest block">
                 OFFICIAL SATELLITE TELEMETRY AUDIT
               </span>
-              <h1 className="text-xl font-black text-white font-mono mt-0.5 print:text-black">
+              <h1 className="text-xl font-black text-[#F5F5F5] font-mono mt-0.5 print:text-black">
                 {geoId}
               </h1>
             </div>
@@ -75,26 +79,26 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
           {/* Core Telemetry Grid */}
           <div className="grid grid-cols-2 gap-4">
             
-            <div className="bg-[#0B0E14] border border-[#262F40] p-4 rounded-xl space-y-2 print:bg-slate-50 print:border-slate-200">
+            <div className="bg-[#161616] border border-[#383838] p-4 rounded-xl space-y-2 print:bg-slate-50 print:border-slate-200">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                 Geospatial Location
               </span>
               <div className="font-mono text-sm font-bold text-amber-400 print:text-amber-700">
-                {latStr}, {lonStr}
+                {h.locationDisplay || `${h.district || 'Industrial Belt'}, ${h.state || 'India'}`}
               </div>
               <div className="text-xs text-slate-300 print:text-slate-700">
-                Intersected Infrastructure: <strong>{h.nearestFacility}</strong>
+                Zone / Landuse: <strong>{h.landuse || 'Environmental Zone'}</strong>
               </div>
               <div className="text-xs text-slate-400 print:text-slate-600">
-                Distance to settlement: {Math.round(h.distanceToPopulationM)}m
+                Facility: {h.nearestFacility}
               </div>
             </div>
 
-            <div className="bg-[#0B0E14] border border-[#262F40] p-4 rounded-xl space-y-2 print:bg-slate-50 print:border-slate-200">
+            <div className="bg-[#161616] border border-[#383838] p-4 rounded-xl space-y-2 print:bg-slate-50 print:border-slate-200">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                 Thermal & Classifier Evidence
               </span>
-              <div className="font-mono text-sm font-bold text-white print:text-black">
+              <div className="font-mono text-sm font-bold text-[#F5F5F5] print:text-black">
                 FRP: <span className="text-amber-400 print:text-amber-700">{h.frp} MW</span> ({h.frpChangePercent > 0 ? `+${h.frpChangePercent}%` : `${h.frpChangePercent}%`})
               </div>
               <div className="text-xs text-slate-300 print:text-slate-700">
@@ -108,7 +112,7 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
           </div>
 
           {/* Sentinel-2 SWIR Verification */}
-          <div className="bg-[#0B0E14] border border-[#262F40] p-4 rounded-xl space-y-2 print:bg-slate-50 print:border-slate-200">
+          <div className="bg-[#161616] border border-[#383838] p-4 rounded-xl space-y-2 print:bg-slate-50 print:border-slate-200">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider print:text-slate-800">
               Copernicus Sentinel-2 Multispectral SWIR Analysis
             </h3>
@@ -118,14 +122,14 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
           </div>
 
           {/* Explainable AI Decision Terminal */}
-          <div className="bg-[#0B0E14] border border-[#262F40] p-4 rounded-xl font-mono text-xs space-y-2 print:bg-slate-100 print:border-slate-300">
+          <div className="bg-[#161616] border border-[#383838] p-4 rounded-xl font-mono text-xs space-y-2 print:bg-slate-100 print:border-slate-300">
             <span className="font-bold text-blue-400 uppercase tracking-wider block font-sans text-xs">
               Explainable AI (XAI) Decision Logic Trace:
             </span>
             <div className="space-y-1 text-slate-300 text-[11px] print:text-slate-800">
               {(h.reasons && h.reasons.length > 0 ? h.reasons : [
                 `Thermal anomaly detected at (${latStr}, ${lonStr}).`,
-                `Hazard score calculated as ${h.hazardScore}/100.`
+                `Risk score calculated as ${h.hazardScore}/100.`
               ]).map((r, i) => (
                 <div key={i}>&gt; {r}</div>
               ))}

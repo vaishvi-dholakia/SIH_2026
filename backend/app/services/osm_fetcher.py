@@ -41,6 +41,37 @@ class OSMFetcher:
             logger.warning(f"Failed querying Overpass API: {e}")
             return None
 
+    @classmethod
+    def query_osm_landcover(cls, lat: float, lon: float, db: Session = None) -> str:
+        """
+        Determines nearest environmental landcover classification (forest, farmland, mine, waste_disposal, residential)
+        using spatial geofence analysis against registered environmental zones in DB.
+        """
+        from app.services.spatial_analyser import SpatialAnalyser
+        from app.database import SessionLocal
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+        try:
+            res = SpatialAnalyser.analyse_point(lat, lon, db)
+            if res.distance_to_forest_m <= 25000:
+                return "forest"
+            elif res.distance_to_farmland_m <= 45000:
+                return "farmland"
+            elif res.distance_to_mining_m <= 15000:
+                return "mine"
+            elif res.distance_to_landfill_m <= 6000:
+                return "waste_disposal"
+            elif res.distance_to_population_m <= 5000:
+                return "residential"
+            else:
+                return "unknown"
+        finally:
+            if close_db:
+                db.close()
+
+
     @staticmethod
     def create_bounding_polygon_wkt(lat: float, lon: float, radius_km: float = 1.0) -> str:
         """
@@ -349,6 +380,64 @@ class OSMFetcher:
             if not db.query(Landfill).filter(Landfill.name == name).first():
                 db.add(Landfill(name=name, geometry=cls.create_bounding_polygon_wkt(lat, lon, r_km)))
                 counts["landfills"] += 1
+
+        # 0. Official Major Indian Refineries & Petrochemical Complexes
+        refinery_data = [
+            ("Jamnagar Oil Refinery Complex (Reliance)", 22.3500, 69.8500, "Reliance Industries Ltd"),
+            ("Nayara Energy Vadinar Refinery", 22.3800, 69.7300, "Nayara Energy Ltd"),
+            ("IOCL Gujarat Refinery (Koyali)", 22.3600, 73.1300, "Indian Oil Corporation Ltd"),
+            ("Surat Petrochemical & Industrial Complex", 21.1700, 72.8300, "Surat Industrial Development"),
+            ("BPCL Mumbai Refinery", 19.0100, 72.8900, "Bharat Petroleum Corporation Ltd"),
+            ("HPCL Mumbai Refinery", 19.0050, 72.8950, "Hindustan Petroleum Corporation Ltd"),
+            ("IOCL Mathura Refinery", 27.4300, 77.7000, "Indian Oil Corporation Ltd"),
+            ("IOCL Panipat Refinery & Petrochemicals", 29.4700, 76.8800, "Indian Oil Corporation Ltd"),
+            ("IOCL Paradeep Refinery", 20.2700, 86.6700, "Indian Oil Corporation Ltd"),
+            ("IOCL Haldia Refinery", 22.0300, 88.1000, "Indian Oil Corporation Ltd"),
+            ("BPCL Kochi Refinery", 9.9500, 76.3500, "Bharat Petroleum Corporation Ltd"),
+            ("MRPL Mangalore Refinery", 12.9900, 74.8500, "Mangalore Refinery & Petrochemicals Ltd"),
+            ("HPCL Visakhapatnam Refinery", 17.6900, 83.2500, "Hindustan Petroleum Corporation Ltd"),
+            ("IOCL Barauni Refinery", 25.4300, 85.9700, "Indian Oil Corporation Ltd"),
+            ("IOCL Bongaigaon Refinery", 26.4700, 90.5600, "Indian Oil Corporation Ltd"),
+            ("Numaligarh Refinery Ltd", 26.6500, 93.7300, "Numaligarh Refinery Ltd"),
+            ("HMEL Guru Gobind Singh Refinery (Bathinda)", 30.0300, 75.0100, "HPCL-Mittal Energy Ltd"),
+            ("BORL Bina Refinery", 24.2300, 78.2000, "Bharat Oman Refineries Ltd"),
+            ("CPCL Manali Refinery (Chennai)", 13.1600, 80.2700, "Chennai Petroleum Corporation Ltd"),
+        ]
+        for name, lat, lon, operator in refinery_data:
+            existing_ref = db.query(Refinery).filter(Refinery.name == name).first()
+            wkt_g = cls.create_bounding_polygon_wkt(lat, lon, radius_km=1.5)
+            if existing_ref:
+                existing_ref.operator = operator
+                existing_ref.geometry = wkt_g
+            else:
+                db.add(Refinery(name=name, operator=operator, geometry=wkt_g, risk_level="Critical", safety_buffer_km=1.5))
+
+        # 0b. Official Indian Population Centers
+        pop_data = [
+            ("Jamnagar City & Urban Center", 22.4700, 70.0500, 600000),
+            ("Ghazipur / East Delhi Urban Settlement", 28.6200, 77.3000, 2500000),
+            ("Bathinda Urban Center", 30.2100, 74.9400, 300000),
+            ("Sangrur / Ludhiana Settlement Zone", 30.8900, 75.8500, 1600000),
+            ("Karnal / Kurukshetra Settlement", 29.6800, 76.9800, 400000),
+            ("Surat Metropolitan City", 21.1700, 72.8300, 6000000),
+            ("Dhanbad / Jharia Mining Settlement", 23.7900, 86.4300, 1200000),
+            ("Kochi Metropolitan Area", 9.9300, 76.2600, 2100000),
+            ("Mumbai Metropolitan Settlement", 19.0700, 72.8700, 12500000),
+            ("Mathura Urban Center", 27.4900, 77.6700, 450000),
+            ("Panipat Urban Settlement", 29.3900, 76.9600, 400000),
+            ("Paradeep Industrial Town", 20.3100, 86.6100, 100000),
+            ("Haldia Township", 22.0600, 88.0600, 200000),
+            ("Mangalore Urban Zone", 12.9100, 74.8500, 700000),
+            ("Visakhapatnam City Center", 17.6800, 83.2100, 2000000),
+        ]
+        for name, lat, lon, pop in pop_data:
+            existing_p = db.query(PopulationCenter).filter(PopulationCenter.name == name).first()
+            wkt_p = cls.create_bounding_polygon_wkt(lat, lon, radius_km=2.5)
+            if existing_p:
+                existing_p.geometry = wkt_p
+                existing_p.estimated_population = pop
+            else:
+                db.add(PopulationCenter(name=name, geometry=wkt_p, estimated_population=pop))
 
         db.commit()
         logger.info(f"Seeded environmental zones: {counts}")

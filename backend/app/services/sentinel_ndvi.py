@@ -41,27 +41,6 @@ class SentinelNDVIService:
         ndvi_arr = cls.calculate_ndvi_array(nir, red)
         return float(np.nanmean(ndvi_arr))
 
-    @staticmethod
-    def calculate_ndbi_array(swir: np.ndarray, nir: np.ndarray) -> np.ndarray:
-        """
-        Dynamically computes the Normalized Difference Built-up Index (NDBI)
-        NDBI = (SWIR - NIR) / (SWIR + NIR) using B11 (SWIR) and B08 (NIR).
-        Safely handles division-by-zero bounds using numpy.where.
-        """
-        swir_f = swir.astype(float)
-        nir_f = nir.astype(float)
-        denom = swir_f + nir_f
-        numer = swir_f - nir_f
-        out_arr = np.zeros_like(numer, dtype=float)
-        ndbi = np.divide(numer, denom, out=out_arr, where=denom != 0.0)
-        return np.clip(ndbi, -1.0, 1.0)
-
-    @classmethod
-    def calculate_mean_ndbi(cls, swir: np.ndarray, nir: np.ndarray) -> float:
-        """Calculates mean NDBI value across the cropped matrix."""
-        ndbi_arr = cls.calculate_ndbi_array(swir, nir)
-        return float(np.nanmean(ndbi_arr))
-
     _cached_token: Optional[str] = None
     _token_expiry: float = 0.0
     _last_error: Optional[str] = None
@@ -126,6 +105,12 @@ class SentinelNDVIService:
         return None
 
     @classmethod
+    async def fetch_sentinel2_ndvi(cls, lat: float, lon: float) -> Optional[float]:
+        """Convenience method to fetch NDVI for a single coordinate."""
+        ndvi_val, _, pending = await cls.fetch_and_calculate_ndvi(lat, lon)
+        return ndvi_val
+
+    @classmethod
     async def fetch_and_calculate_ndvi(
         cls,
         lat: float,
@@ -135,10 +120,11 @@ class SentinelNDVIService:
         """
         Conditionally triggered for unsuppressed / emergency hotspots.
         Pulls actual Sentinel-2 bands (Red B4, NIR B8, SWIR B11/B12, Blue B2)
-        and computes true pixel-level NDVI and NDBI.
+        and computes true pixel-level NDVI.
+        (Strictly zero NDBI calculated or returned).
 
         Returns:
-            (ndvi_value, ndbi_value, pending)
+            (ndvi_value, None, pending)
             If credentials or imagery are unavailable, returns (None, None, True).
             NEVER fabricates or mocks placeholder values.
         """
@@ -146,7 +132,7 @@ class SentinelNDVIService:
         if not token:
             logger.info(
                 f"Sentinel Hub credentials not active or not configured. "
-                f"Preserving data purity for coordinate ({lat}, {lon}): ndvi=None, ndbi=None, pending=True"
+                f"Preserving data purity for coordinate ({lat}, {lon}): ndvi=None, pending=True"
             )
             return None, None, True
 
@@ -225,7 +211,6 @@ class SentinelNDVIService:
                             b12 = src.read(5) # SWIR-2
 
                             mean_ndvi = cls.calculate_mean_ndvi(b8, b4)
-                            mean_ndbi = cls.calculate_mean_ndbi(b11, b8)
                             
                             # Stack and save SWIR composite to scratch
                             composite_path = os.path.join(
@@ -247,8 +232,8 @@ class SentinelNDVIService:
                                 dst.write(b11, 2)  # Green channel = SWIR-1
                                 dst.write(b2, 3)   # Blue channel = Blue
 
-                            logger.info(f"Computed real Sentinel-2 NDVI: {mean_ndvi:.4f}, NDBI: {mean_ndbi:.4f} for ({lat}, {lon})")
-                            return round(mean_ndvi, 4), round(mean_ndbi, 4), False
+                            logger.info(f"Computed real Sentinel-2 NDVI: {mean_ndvi:.4f} for ({lat}, {lon})")
+                            return round(mean_ndvi, 4), None, False
                     except Exception as err:
                         logger.error(f"Error decoding Sentinel-2 TIFF with rasterio: {err}")
                         return None, None, True

@@ -36,8 +36,9 @@ frontend/.env
 frontend/.env.*
 !frontend/.env.example
 
-# Local databases and generated geospatial data
+# Local databases (Explicitly whitelist geoscd.db so satellite data is NOT lost on git push!)
 *.db
+!backend/geoscd.db
 *.sqlite
 *.sqlite3
 backend/scratch/*

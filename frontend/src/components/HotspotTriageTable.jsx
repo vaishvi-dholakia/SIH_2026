@@ -99,7 +99,7 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
           <div className="flex items-center gap-1 bg-command-950 border border-command-border p-1 rounded-sm">
             <Filter className="w-3.5 h-3.5 text-tactical-cyan ml-1" />
             <span className="text-[10px] text-tactical-gray uppercase mr-1">Status:</span>
-            {['ALL', 'new', 'reviewed', 'resolved'].map((st) => (
+            {['ALL', 'new', 'reviewed', 'suppressed', 'resolved'].map((st) => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
@@ -211,11 +211,36 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
                         <div className="text-[9px] text-tactical-gray">{h.brightness || 0.0} K</div>
                       </td>
 
-                      {/* Nearest Facility */}
+                      {/* Location & Facility Context */}
                       <td className="p-3">
-                        <div className="font-bold text-slate-200">{h.nearest_refinery_name || 'Open Area'}</div>
-                        <div className="text-[9px] text-tactical-red">
-                          Refinery: {formatDistance(h.distance_to_refinery_m)}
+                        <div className="font-bold text-slate-200">
+                          {h.locationDisplay ? (
+                            <span>{h.locationDisplay}</span>
+                          ) : h.nearest_refinery_name || h.nearestRefineryName ? (
+                            <span className="text-red-400 font-extrabold">{h.nearest_refinery_name || h.nearestRefineryName}</span>
+                          ) : (h.classification || '').includes('Forest') ? (
+                            <span className="text-emerald-400">Forest Region</span>
+                          ) : (h.classification || '').includes('Agricultural') ? (
+                            <span className="text-amber-400">Agricultural Belt</span>
+                          ) : (h.classification || '').includes('Mining') ? (
+                            <span className="text-slate-300">Mining Zone</span>
+                          ) : (h.classification || '').includes('Urban') ? (
+                            <span className="text-orange-400">Urban Sector</span>
+                          ) : (
+                            <span>Open Region</span>
+                          )}
+                          {h.detectionCount > 1 && (
+                            <span className="ml-1 text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 px-1 py-0.5 rounded shadow-sm inline-flex items-center gap-1">
+                              <span>🛰️ {h.detectionCount} Passes</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] text-tactical-gray tracking-tight mt-0.5">
+                          {h.distance_to_refinery_m <= 1000 ? (
+                            <span className="text-tactical-red font-bold">Inside OISD 1km Geofence</span>
+                          ) : (
+                            <span>Nearest Ref: {formatDistance(h.distance_to_refinery_m)} ({h.nearest_refinery_name || h.nearestRefineryName || 'Facility'})</span>
+                          )}
                         </div>
                       </td>
 
@@ -234,7 +259,7 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
                       {/* Status Selector */}
                       <td className="p-3">
                         <div className="flex items-center gap-1">
-                          {['new', 'reviewed', 'resolved'].map((st) => (
+                          {['new', 'reviewed', 'suppressed', 'resolved'].map((st) => (
                             <button
                               key={st}
                               onClick={() => handleStatusChange(h.id, st)}
@@ -245,6 +270,8 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
                                     ? 'bg-tactical-red/20 text-tactical-red border-tactical-red'
                                     : st === 'reviewed'
                                     ? 'bg-tactical-amber/20 text-tactical-amber border-tactical-amber'
+                                    : st === 'suppressed'
+                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                                     : 'bg-tactical-green/20 text-tactical-green border-tactical-green'
                                   : 'bg-command-950 text-tactical-gray border-command-border hover:text-white'
                               }`}

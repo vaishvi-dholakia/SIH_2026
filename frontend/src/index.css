@@ -4,26 +4,27 @@
 
 @layer base {
   body {
-    background-color: #0a0908;
-    /* Subtle technical grid pattern instead of space gradient */
+    background-color: #161616;
+    color: #F5F5F5;
+    /* Pure Neutral Technical Grid Pattern (0% Blue Tint) */
     background-image: 
-      radial-gradient(circle at 50% 0%, rgba(0, 229, 255, 0.03), transparent 70%),
-      radial-gradient(circle at 85% 30%, rgba(255, 179, 0, 0.03), transparent 50%),
-      radial-gradient(circle at 15% 70%, rgba(255, 23, 68, 0.03), transparent 50%);
+      radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.02), transparent 70%),
+      radial-gradient(circle at 85% 30%, rgba(255, 255, 255, 0.015), transparent 50%),
+      radial-gradient(circle at 15% 70%, rgba(255, 255, 255, 0.015), transparent 50%);
     background-attachment: fixed;
   }
 }
 
-/* Tactical Panel Design (Replacing Glassmorphism) */
+/* Tactical Panel Design (100% Pure Neutral Gunmetal Charcoal) */
 .glass-panel {
-  background: #121110;
-  border: 1px solid #33312e;
+  background: #242424;
+  border: 1px solid #383838;
 }
 
 .glass-panel-glow {
-  background: #1a1917;
-  border: 1px solid #00e5ff;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
+  background: #242424;
+  border: 1px solid #383838;
+  box-shadow: 0 0 10px rgba(245, 245, 245, 0.05);
 }
 
 /* Custom Orbital Grid Pattern Overlay - Technical */
@@ -40,31 +41,31 @@
   height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0908;
+  background: #161616;
 }
 ::-webkit-scrollbar-thumb {
-  background: #33312e;
+  background: #383838;
   border-radius: 0px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #00e5ff;
+  background: #505050;
 }
 
 /* Leaflet Custom Marker & Popup Adjustments - Tactical */
 .leaflet-popup-content-wrapper {
-  background: #0f172a !important;
-  color: #f8fafc !important;
-  border: 1px solid #334155 !important;
+  background: #242424 !important;
+  color: #F5F5F5 !important;
+  border: 1px solid #383838 !important;
   border-radius: 8px !important;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7) !important;
 }
 
 .leaflet-popup-tip {
-  background: #0f172a !important;
+  background: #242424 !important;
 }
 
 .leaflet-container {
-  background-color: #020617 !important;
+  background-color: #161616 !important;
   font-family: inherit;
   width: 100%;
   height: 100%;
@@ -108,6 +109,51 @@
   }
   100% {
     box-shadow: 0 0 0 0 rgba(0, 229, 255, 0);
+  }
+}
+
+/* Dedicated Print CSS Rules for Pristine 1-Page PDF Generation */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11px !important;
+  }
+
+  /* Hide header, sidebar, map, alert feed, and background overlays when printing */
+  header, aside, main, nav, .print\:hidden {
+    display: none !important;
+  }
+
+  /* Reset modal backdrop container so only printable report renders */
+  .fixed.inset-0 {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+  }
+
+  .print-modal-container {
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Avoid unwanted multi-page breaks */
+  * {
+    page-break-inside: avoid;
   }
 }
 

@@ -11,6 +11,8 @@ class IncidentDTO(BaseModel):
     id: int
     latitude: float
     longitude: float
+    firmsType: int = 0
+    classificationClass: str = "01"
     classification: str
     classificationConfidence: float = Field(..., description="0-100 percentage")
     hazardScore: int = Field(..., description="0-100 unified hazard score")
@@ -25,11 +27,10 @@ class IncidentDTO(BaseModel):
     isSuppressed: bool = Field(..., description="True if routine operational flaring is suppressed")
     ndvi: Optional[float] = None
     ndviPending: bool = False
-    ndbi: Optional[float] = None
-    ndbiPending: bool = False
     sentinelVerified: bool = False
     status: str = Field("new", description="new, reviewed, or resolved")
     nearestFacility: str = Field("Open Region", description="Nearest registered facility name")
+    nearestRefineryName: Optional[str] = Field(None, description="Nearest registered refinery name")
     operator: str = Field("Unspecified", description="Operating authority name")
     distanceToRefineryM: float
     distanceToPopulationM: float
@@ -39,6 +40,15 @@ class IncidentDTO(BaseModel):
     lastUpdated: str = Field(..., description="HH:MM UTC time string")
     reasons: List[str] = Field(default_factory=list, description="XAI contributing factors")
     dataSource: str = Field("NASA_FIRMS", description="NASA_FIRMS or SIMULATION")
+    detectionCount: int = Field(1, description="Number of satellite passes in this spatial cluster")
+    maxFrp: float = Field(0.0, description="Peak FRP in MW across cluster passes")
+    tier: int = Field(3, description="1: Industrial, 2: Encroaching Buffer, 3: Pure Environmental")
+    tierLabel: str = Field("🟢 ROUTINE ENVIRONMENTAL FIRE", description="Human readable tier label")
+    subdistrict: Optional[str] = Field(None, description="Subdistrict or Tehsil name")
+    district: Optional[str] = Field(None, description="District name")
+    state: Optional[str] = Field(None, description="State name")
+    landuse: Optional[str] = Field(None, description="Land use or zone classification")
+    locationDisplay: Optional[str] = Field(None, description="Full human readable location name e.g. Patti, Tarn Taran, Punjab")
 
     class Config:
         from_attributes = True

@@ -49,9 +49,9 @@ def reclassify_all():
                 distance_to_landfill_m=spatial_res.distance_to_landfill_m,
                 persistence_days=h.persistence_days or 1,
                 ndvi=h.ndvi,
-                ndbi=h.ndbi,
                 is_suppressed=bool(h.is_suppressed),
-                db=db
+                db=db,
+                firms_type=getattr(h, "firms_type", 0)
             )
 
             score = calculate_unified_hazard_score(
@@ -63,6 +63,20 @@ def reclassify_all():
                 is_suppressed=bool(h.is_suppressed)
             )
 
+            if "Incident" in cls_name:
+                cls_code = "02"
+            elif "Thermal Source" in cls_name or "Industrial" in cls_name:
+                cls_code = "01"
+            elif "Forest" in cls_name:
+                cls_code = "03"
+            elif "Agricultural" in cls_name:
+                cls_code = "04"
+            elif "Mining" in cls_name:
+                cls_code = "05"
+            else:
+                cls_code = "06"
+
+            h.classification_class = cls_code
             h.classification = cls_name
             h.model_confidence = conf
             h.anomaly_score = anomaly_score

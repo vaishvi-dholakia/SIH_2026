@@ -8,10 +8,9 @@ class HotspotBase(BaseModel):
     brightness: float
     frp: float
     confidence: float
+    firms_type: int = 0
     ndvi: Optional[float] = None
     ndvi_pending: bool = False
-    ndbi: Optional[float] = None
-    ndbi_pending: bool = False
     persistence_days: int = 1
     distance_to_refinery_m: float
     distance_to_population_m: float
@@ -22,11 +21,13 @@ class HotspotBase(BaseModel):
     anomaly_score: float = 0.0
     priority_score: int = 0
     detected_at: datetime
+    classification_class: str = "01"
     classification: str
     model_confidence: float = 0.0
     is_suppressed: bool = False
     status: str = "new"
     nearest_refinery_id: Optional[int] = None
+    nearest_refinery_name: Optional[str] = None
 
 class HotspotOut(HotspotBase):
     id: int
@@ -35,7 +36,7 @@ class HotspotOut(HotspotBase):
         from_attributes = True
 
 class HotspotStatusUpdate(BaseModel):
-    status: str = Field(..., example="reviewed", pattern="^(new|reviewed|resolved)$")
+    status: str = Field(..., example="reviewed", pattern="^(new|reviewed|suppressed|resolved)$")
 
 class HotspotGeoJSONFeature(BaseModel):
     type: str = "Feature"

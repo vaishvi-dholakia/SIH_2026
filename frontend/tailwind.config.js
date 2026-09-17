@@ -8,11 +8,11 @@ export default {
     extend: {
       colors: {
         command: {
-          950: '#0a0908', // Very dark charcoal / near-black with warm tone
-          900: '#121110', // Dark panel background
-          800: '#1a1917', // Lighter panel background
-          700: '#2c2b29', // Hover states, subtle borders
-          border: '#33312e' // Thin borders
+          950: '#161616', // Main Canvas Background (Pure Dark Charcoal)
+          900: '#242424', // Cards & Sidebar (Deep Gunmetal Surface)
+          800: '#2c2c2c', // Lighter hover states
+          700: '#383838', // Neutral Steel Border
+          border: '#383838' // Thin borders
         },
         tactical: {
           cyan: '#00e5ff',
@@ -29,7 +29,7 @@ export default {
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'Courier New', 'monospace'],
-        sans: ['Inter', 'system-ui', 'sans-serif']
+        sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif']
       },
       animation: {
         'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',

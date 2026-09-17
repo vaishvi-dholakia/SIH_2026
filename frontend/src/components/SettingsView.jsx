@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Settings, Bell, Shield, Sliders, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Settings, Bell, Shield, Sliders, CheckCircle2, RefreshCw, Lock, LogOut } from 'lucide-react';
 import { syncOsmData, triggerBackfill } from '../api/client';
 
-export default function SettingsView() {
+export default function SettingsView({ onLogout }) {
   const [audioAlerts, setAudioAlerts] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState('12');
@@ -38,36 +38,24 @@ export default function SettingsView() {
   return (
     <div className="space-y-6 font-sans max-w-4xl">
       <div>
-        <h2 className="text-xl font-black text-white tracking-tight uppercase">SETTINGS</h2>
+        <h2 className="text-xl font-black text-[#F5F5F5] tracking-tight uppercase">SETTINGS</h2>
         <p className="text-sm text-slate-400">System configuration & notification parameters</p>
       </div>
 
       <div className="space-y-4">
         
         {/* Notification Settings */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-sm">
-          <div className="flex items-center gap-2 text-white font-bold text-base border-b border-slate-800 pb-3">
+        <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-sm">
+          <div className="flex items-center gap-2 text-[#F5F5F5] font-bold text-base border-b border-[#383838] pb-3">
             <Bell className="w-5 h-5 text-red-500" />
             <span>Alert & Sound Notifications</span>
           </div>
 
           <div className="space-y-4 text-sm text-slate-300">
-            <label className="flex items-center justify-between cursor-pointer p-3 bg-slate-950 rounded-lg border border-slate-800">
-              <div>
-                <strong className="text-white block font-semibold">Audible Disaster Alarm</strong>
-                <span className="text-xs text-slate-400">Play high-priority sound alarm when a critical industrial incident is detected.</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={audioAlerts}
-                onChange={(e) => setAudioAlerts(e.target.checked)}
-                className="w-5 h-5 accent-red-500 rounded cursor-pointer"
-              />
-            </label>
 
-            <label className="flex items-center justify-between cursor-pointer p-3 bg-slate-950 rounded-lg border border-slate-800">
+            <label className="flex items-center justify-between cursor-pointer p-3 bg-[#161616] rounded-lg border border-[#383838]">
               <div>
-                <strong className="text-white block font-semibold">Live Telemetry Auto-Stream</strong>
+                <strong className="text-[#F5F5F5] block font-semibold">Live Telemetry Auto-Stream</strong>
                 <span className="text-xs text-slate-400">Automatically refresh thermal hotspot data periodically in the background.</span>
               </div>
               <input
@@ -81,8 +69,8 @@ export default function SettingsView() {
         </div>
 
         {/* Data Sync & Operations */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-sm">
-          <div className="flex items-center gap-2 text-white font-bold text-base border-b border-slate-800 pb-3">
+        <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-sm">
+          <div className="flex items-center gap-2 text-[#F5F5F5] font-bold text-base border-b border-[#383838] pb-3">
             <Shield className="w-5 h-5 text-emerald-400" />
             <span>Geospatial Data Operations</span>
           </div>
@@ -91,7 +79,7 @@ export default function SettingsView() {
             <button
               onClick={handleSyncOsm}
               disabled={syncing}
-              className="p-4 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white font-bold text-xs rounded-xl transition-all flex flex-col items-center justify-center gap-2"
+              className="p-4 bg-[#161616] border border-[#383838] hover:border-slate-500 text-slate-200 hover:text-white font-bold text-xs rounded-xl transition-all flex flex-col items-center justify-center gap-2"
             >
               <RefreshCw className={`w-5 h-5 text-amber-400 ${syncing ? 'animate-spin' : ''}`} />
               <span>SYNC LIVE OPENSTREETMAP DATA</span>
@@ -100,7 +88,7 @@ export default function SettingsView() {
             <button
               onClick={handleBackfill}
               disabled={syncing}
-              className="p-4 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white font-bold text-xs rounded-xl transition-all flex flex-col items-center justify-center gap-2"
+              className="p-4 bg-[#161616] border border-[#383838] hover:border-slate-500 text-slate-200 hover:text-white font-bold text-xs rounded-xl transition-all flex flex-col items-center justify-center gap-2"
             >
               <RefreshCw className={`w-5 h-5 text-emerald-400 ${syncing ? 'animate-spin' : ''}`} />
               <span>RUN NASA FIRMS BACKFILL</span>
@@ -108,11 +96,46 @@ export default function SettingsView() {
           </div>
 
           {statusMsg && (
-            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs text-emerald-400 font-semibold flex items-center gap-2">
+            <div className="p-3 bg-[#161616] rounded-lg border border-[#383838] text-xs text-emerald-400 font-semibold flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
               <span>{statusMsg}</span>
             </div>
           )}
+        </div>
+
+        {/* Admin Authentication & Security Control */}
+        <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-sm">
+          <div className="flex items-center gap-2 text-[#F5F5F5] font-bold text-base border-b border-[#383838] pb-3">
+            <Lock className="w-5 h-5 text-blue-400" />
+            <span>Admin Authentication & Terminal Security</span>
+          </div>
+
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#161616] rounded-lg border border-[#383838] gap-2">
+              <div>
+                <strong className="text-[#F5F5F5] block font-semibold">Active Terminal Operator</strong>
+                <span className="text-xs text-slate-400">Authenticated Admin Session (NTRO Lead Operator | Badge PS-26162)</span>
+              </div>
+              <div className="text-xs font-mono font-bold text-cyan-400 bg-cyan-500/10 px-3 py-1 rounded border border-cyan-500/30">
+                USER: admin
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#161616] rounded-lg border border-[#383838] gap-2">
+              <div>
+                <strong className="text-[#F5F5F5] block font-semibold">Terminal Session Access</strong>
+                <span className="text-xs text-slate-400">Strict NTRO Admin Terminal Authentication Enforced</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onLogout && onLogout()}
+                className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-400 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 shrink-0"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>LOCK TERMINAL / LOGOUT</span>
+              </button>
+            </div>
+          </div>
         </div>
 
       </div>

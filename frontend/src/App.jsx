@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Volume2, VolumeX, ShieldAlert, Radio, Activity, Compass, 
-  Clock, MapPin, Layers, Flame, FileText, Bell
+  ShieldAlert, Radio, Activity, Compass, 
+  Clock, MapPin, Layers, Flame, FileText, Bell, LogOut, UserCheck, Shield
 } from 'lucide-react';
 import SidebarNav from './components/SidebarNav';
 import DashboardView from './components/DashboardView';
@@ -15,6 +15,7 @@ import ForensicPdfModal from './components/ForensicPdfModal';
 import HistoryView from './components/HistoryView';
 import SettingsView from './components/SettingsView';
 import SpaceAlertToast from './components/SpaceAlertToast';
+import LoginView from './components/LoginView';
 import { 
   fetchDashboardSummary, 
   fetchIncidents, 
@@ -25,7 +26,10 @@ import { spaceWS } from './services/websocket';
 import { isPointInIndia, setIndiaBoundaryData } from './utils/indiaBoundary';
 
 export default function App() {
-  const [activePage, setActivePage] = useState('map'); // Default to GIS Map Command Deck
+  // Always require Admin Login on initial launch / page load
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const [activePage, setActivePage] = useState('dashboard'); // Default to Executive Dashboard Landing Page
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [summary, setSummary] = useState(null);
   const [incidents, setIncidents] = useState([]);
@@ -38,15 +42,16 @@ export default function App() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Panel collapse states
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Panel collapse states (Default collapsed on start for maximum GIS map viewport width)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [filterCollapsed, setFilterCollapsed] = useState(false);
-  const [alertFeedCollapsed, setAlertFeedCollapsed] = useState(false);
+  const [alertFeedCollapsed, setAlertFeedCollapsed] = useState(true);
 
   // Filters state
   const [filters, setFilters] = useState({
     minFrp: 0,
     minScore: 0,
+    dateRange: '30d',
     hideSuppressed: false,
     categories: [
       'Potential Industrial Incident',
@@ -106,10 +111,7 @@ export default function App() {
       if (message.event === 'CRITICAL_DISASTER_ALARM' || message.classification === 'Potential Industrial Incident') {
         setActiveAlert(message);
         if (audioEnabled) {
-          try {
-            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-            audio.play().catch(() => {});
-          } catch (e) {}
+          playAlarmSound();
         }
       }
       loadData();
@@ -121,9 +123,10 @@ export default function App() {
     };
   }, [loadData, audioEnabled]);
 
-  // Filtered Incidents based on FilterPanel settings & Strict Indian Sovereign Territory Boundary
+  // Memoized Filtered Incidents (Real India coordinates filtering + date scrubber)
   const filteredIncidents = useMemo(() => {
-    return (incidents || []).filter(inc => {
+    if (!Array.isArray(incidents)) return [];
+    return incidents.filter((inc) => {
       if (!inc) return false;
       if (!isPointInIndia(inc.latitude, inc.longitude)) return false;
       const frp = inc.frp || 0;
@@ -132,6 +135,22 @@ export default function App() {
       if (score < filters.minScore) return false;
       if (filters.hideSuppressed && inc.isSuppressed) return false;
       if (filters.categories.length > 0 && inc.classification && !filters.categories.includes(inc.classification)) return false;
+
+      // Real acquisition timestamp filtering by date range
+      if (filters.dateRange && filters.dateRange !== 'all') {
+        const dateStr = inc.detectedAt || inc.acqDateTime || inc.acquisitionTime || inc.timestamp || inc.acq_date;
+        if (dateStr) {
+          const incDate = new Date(dateStr);
+          if (!isNaN(incDate.getTime())) {
+            const diffHours = (new Date() - incDate) / (1000 * 60 * 60);
+            if (filters.dateRange === '24h' && diffHours > 24) return false;
+            if (filters.dateRange === '7d' && diffHours > 24 * 7) return false;
+            if (filters.dateRange === '15d' && diffHours > 24 * 15) return false;
+            if (filters.dateRange === '30d' && diffHours > 24 * 30) return false;
+          }
+        }
+      }
+
       return true;
     });
   }, [incidents, filters]);
@@ -142,6 +161,7 @@ export default function App() {
     setFilters({
       minFrp: 0,
       minScore: 0,
+      dateRange: '30d',
       hideSuppressed: false,
       categories: [
         'Potential Industrial Incident',
@@ -159,72 +179,114 @@ export default function App() {
     setTargetMapIncident(hotspot);
   };
 
+  const handleLoginSuccess = (user) => {
+    try {
+      localStorage.setItem('geoscd_user', JSON.stringify(user));
+    } catch (e) {}
+    setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('geoscd_user');
+    } catch (e) {}
+    setCurrentUser(null);
+  };
+
+  // Mandatory Admin Authentication Screen Requirement
+  if (!currentUser) {
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
-    <div className="min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col font-sans antialiased select-none selection:bg-red-500 selection:text-white">
+    <div className="min-h-screen bg-[#161616] text-[#F5F5F5] flex flex-col font-sans antialiased select-none selection:bg-blue-600 selection:text-white">
       
-      {/* Top Header Bar - National Tactical Operations Deck */}
-      <header className="bg-[#151A26] border-b border-[#262F40] px-4 py-2.5 flex items-center justify-between shadow-lg z-30 shrink-0">
+      {/* Top Header Bar - Geospatial Early Warning System Header */}
+      <header className="bg-[#242424] border-b border-[#383838] px-6 py-3 flex items-center justify-between shadow-xl z-30 shrink-0 relative overflow-hidden">
         
-        {/* Left: Branding & Problem Statement */}
-        <div className="flex items-center gap-3">
-          <div className="bg-[#1D4ED8] p-2 rounded-lg text-white shadow-md">
-            <Flame className="w-5 h-5 animate-pulse" />
+        {/* Decorative Top-Right Satellite Earth Background Graphic Overlay */}
+        <div className="absolute right-0 top-0 bottom-0 w-96 opacity-25 pointer-events-none overflow-hidden hidden sm:block">
+          <svg viewBox="0 0 400 100" className="w-full h-full" preserveAspectRatio="none">
+            <defs>
+              <radialGradient id="earthGlow" cx="70%" cy="100%" r="80%">
+                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
+                <stop offset="60%" stopColor="#0284c7" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#161616" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id="satelliteBeam" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.6" />
+                <stop offset="100%" stopColor="#0284c7" stopOpacity="0.05" />
+              </linearGradient>
+            </defs>
+
+            {/* Curved Earth Horizon */}
+            <path d="M 150 100 Q 280 40 400 60 L 400 100 Z" fill="url(#earthGlow)" />
+
+            {/* Light Beam Cone from Satellite */}
+            <polygon points="200,10 380,90 280,100" fill="url(#satelliteBeam)" />
+
+            {/* Orbit Lines */}
+            <path d="M 120 10 Q 260 25 380 70" fill="none" stroke="#38bdf8" strokeWidth="0.8" strokeDasharray="3,3" opacity="0.6" />
+
+            {/* Satellite Icon Graphic in Orbit */}
+            <g transform="translate(190, 5) scale(0.7)">
+              <rect x="10" y="10" width="14" height="8" rx="2" fill="#38bdf8" />
+              <line x1="0" y1="14" x2="10" y2="14" stroke="#7dd3fc" strokeWidth="2" />
+              <line x1="24" y1="14" x2="34" y2="14" stroke="#7dd3fc" strokeWidth="2" />
+              <rect x="-6" y="9" width="6" height="10" fill="#0284c7" stroke="#7dd3fc" strokeWidth="0.5" />
+              <rect x="34" y="9" width="6" height="10" fill="#0284c7" stroke="#7dd3fc" strokeWidth="0.5" />
+            </g>
+          </svg>
+        </div>
+
+        {/* Left: Official GEO-SCD Branding & Tagline */}
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="bg-blue-600/20 border border-blue-500/40 p-2 rounded-xl text-blue-400 shadow-md">
+            <Radio className="w-5 h-5 animate-pulse text-cyan-400" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-black text-white uppercase tracking-wider font-mono flex items-center gap-1">
-                🔥 FLAREFILTER
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-black text-white uppercase tracking-wider font-mono">
+                GEO-SCD
               </h1>
-              <span className="bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-mono font-bold px-2 py-0.5 rounded">
-                INDIAN COMMAND DECK
+              <span className="hidden lg:inline-block text-xs font-mono font-bold text-cyan-400 pl-3 border-l border-[#383838]">
+                Beyond Heat Dots: Precision Fire Intelligence
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono">
-              Satellite Fire & Thermal Intelligence
+            <p className="text-xs text-slate-400 font-semibold mt-0.5">
+              Geospatial Early Warning & Response System
             </p>
           </div>
         </div>
 
-        {/* Right: Telemetry Controls, Audio Mute & Clock */}
-        <div className="flex items-center gap-4 text-xs font-mono">
-          
-          {/* UTC Clock */}
-          <div className="hidden sm:flex items-center gap-1.5 bg-[#0B0E14] border border-[#262F40] px-3 py-1.5 rounded-lg text-slate-300">
-            <Clock className="w-3.5 h-3.5 text-blue-400" />
-            <span>{currentTime.toISOString().replace('T', ' ').substring(0, 19)} UTC</span>
+        {/* Right: Satellite Graphic Illustration + System Online Pill + Clock + Admin Profile */}
+        <div className="flex items-center gap-3.5 text-xs font-sans relative z-10">
+
+          {/* System Online Badge */}
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-full font-mono font-bold text-emerald-400 text-xs shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <span>System Online</span>
           </div>
 
-          {/* Audio Speaker Mute Toggle */}
-          <button
-            onClick={() => setAudioEnabled(!audioEnabled)}
-            className={`px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              audioEnabled 
-                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20' 
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-            }`}
-            title={audioEnabled ? "Mute Incident Alarm Audio" : "Enable Incident Alarm Audio"}
-          >
-            {audioEnabled ? (
-              <>
-                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Audio Alert ON</span>
-              </>
-            ) : (
-              <>
-                <VolumeX className="w-3.5 h-3.5 text-slate-400" />
-                <span>Audio Muted</span>
-              </>
-            )}
-          </button>
+          {/* Live Timestamp */}
+          <div className="hidden md:flex items-center gap-1.5 bg-[#161616] border border-[#383838] px-3.5 py-1.5 rounded-xl text-slate-300 font-mono text-xs shadow-inner">
+            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{currentTime.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} | {currentTime.toLocaleTimeString()}</span>
+          </div>
 
-          {/* WebSocket Status Indicator */}
-          <div className="flex items-center gap-1.5 bg-[#0B0E14] border border-[#262F40] px-3 py-1.5 rounded-lg">
-            <span className={`w-2 h-2 rounded-full ${
-              connectionStatus === 'connected' ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'
-            }`} />
-            <span className={connectionStatus === 'connected' ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-              {connectionStatus === 'connected' ? 'WS STREAM ACTIVE' : 'POLLING MODE'}
-            </span>
+          {/* Logged-in Admin User Profile & Lock Console */}
+          <div className="flex items-center gap-2 bg-[#161616] border border-[#383838] px-3 py-1 rounded-xl shadow-inner">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+              <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline-block font-mono text-cyan-300">{currentUser?.username || 'admin'}</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1 text-slate-400 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+              title="Lock Terminal & Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
 
         </div>
@@ -248,22 +310,13 @@ export default function App() {
 
         {/* Dynamic Page Views */}
         {activePage === 'map' ? (
-          /* Main 3-Column Interactive GIS Command Deck Layout */
+          /* Main Interactive GIS Command Deck Layout */
           <main className="flex-1 flex min-w-0 overflow-hidden">
             
-            {/* Collapsible Left Filter Panel */}
-            <FilterPanel
-              filters={filters}
-              setFilters={setFilters}
-              collapsed={filterCollapsed}
-              onToggleCollapse={() => setFilterCollapsed(!filterCollapsed)}
-              onReset={resetFilters}
-            />
-
-            {/* Center Viewport: GIS Map + Telemetry Panel */}
-            <div className="flex-1 flex flex-col min-w-0 p-4 space-y-4 overflow-y-auto bg-[#0B0E14]">
+            {/* Center Viewport: Top Horizontal Filter Bar + GIS Map + Telemetry Panel */}
+            <div className="flex-1 flex flex-col min-w-0 p-4 space-y-3 overflow-y-auto bg-[#161616]">
               
-              {/* GIS Satellite Map */}
+              {/* GIS Satellite Map with Floating Collapsible Left Filters */}
               <MapView
                 incidents={filteredIncidents}
                 refineries={refineries}
@@ -271,6 +324,9 @@ export default function App() {
                 targetIncident={targetMapIncident}
                 onSelectHotspot={handleSelectHotspot}
                 backendOffline={connectionStatus === 'disconnected'}
+                filters={filters}
+                setFilters={setFilters}
+                resetFilters={resetFilters}
               />
 
               {/* Bottom Incident Telemetry Panel */}
@@ -294,7 +350,7 @@ export default function App() {
           </main>
         ) : (
           /* Alternative Full Page Views */
-          <main className="flex-1 min-w-0 p-6 md:p-8 overflow-y-auto bg-[#0B0E14]">
+          <main className="flex-1 min-w-0 p-6 md:p-8 overflow-y-auto bg-[#161616]">
             <div className="max-w-7xl mx-auto space-y-6">
               
               {activePage === 'dashboard' && (
@@ -302,6 +358,9 @@ export default function App() {
                   summary={summary}
                   incidents={incidents}
                   onSelectIncident={(inc) => setSelectedIncident(inc)}
+                  onNavigateMap={() => setActivePage('map')}
+                  onNavigateHistory={() => setActivePage('history')}
+                  onOpenPdfDossier={(inc) => setPdfHotspot(inc || incidents[0])}
                 />
               )}
 
@@ -319,7 +378,7 @@ export default function App() {
               )}
 
               {activePage === 'settings' && (
-                <SettingsView />
+                <SettingsView onLogout={handleLogout} />
               )}
 
             </div>

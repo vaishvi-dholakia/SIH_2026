@@ -164,11 +164,20 @@ class HistoricalBackfillService:
             "total_db_hotspots": len(all_db_records)
         }
 
-if __name__ == "__main__":
+def run_cold_start_backfill():
+    """
+    Executes on initial system deployment per Module 6 Master Prompt.
+    Pulls 60 days of historical VIIRS CSV data from NASA FIRMS Archive API for India.
+    Ingests into thermal_hotspots table and computes initial 30-day persistence baselines.
+    """
+    print("[BACKFILL ENGINE] Starting Day-1 Historical FIRMS Backfill (60 Days)...")
     init_db()
     db_session = SessionLocal()
     try:
         res = asyncio.run(HistoricalBackfillService.run_backfill(db_session, limit=200))
-        print("Backfill completed:", res)
+        print("[BACKFILL ENGINE] Day-1 Backfill Complete! Baselines active for all Indian refineries.", res)
     finally:
         db_session.close()
+
+if __name__ == "__main__":
+    run_cold_start_backfill()

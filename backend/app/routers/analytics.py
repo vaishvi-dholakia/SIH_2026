@@ -77,18 +77,19 @@ def get_explainability_metrics():
     else:
         # Standard geospatial physics weight priors matching FEATURE_NAMES
         fallback_map = {
-            "brightness": 0.12,
-            "frp": 0.20,
-            "confidence": 0.08,
-            "distance_to_refinery_m": 0.20,
-            "distance_to_population_m": 0.10,
-            "distance_to_forest_m": 0.05,
+            "brightness": 0.10,
+            "frp": 0.18,
+            "confidence": 0.06,
+            "firms_type": 0.12,
+            "distance_to_refinery_m": 0.18,
+            "distance_to_population_m": 0.08,
+            "distance_to_forest_m": 0.04,
             "distance_to_farmland_m": 0.04,
             "distance_to_mining_m": 0.03,
-            "persistence_days": 0.06,
-            "ndvi": 0.04,
-            "ndbi": 0.04,
-            "anomaly_score": 0.04
+            "distance_to_landfill_m": 0.05,
+            "persistence_days": 0.04,
+            "ndvi": 0.05,
+            "anomaly_score": 0.03
         }
         importances = [fallback_map.get(name, 0.05) for name in FEATURE_NAMES]
         model_name = "Rule-Based Spatial-Spectral Inference Engine"
@@ -97,14 +98,15 @@ def get_explainability_metrics():
         "brightness": "Brightness Temperature (Kelvin) measured by satellite sensor",
         "frp": "Fire Radiative Power (MW) indicating combustion intensity",
         "confidence": "Detection confidence metric from satellite processing algorithm",
+        "firms_type": "NASA FIRMS landcover/source tag (0=Vegetation, 2=Static Land, 3=Offshore)",
         "distance_to_refinery_m": "Proximity to nearest critical industrial facility boundary",
         "distance_to_population_m": "Proximity to nearest vulnerable residential population zone",
         "distance_to_forest_m": "Proximity to nearest forest boundary",
         "distance_to_farmland_m": "Proximity to nearest agricultural farmland area",
         "distance_to_mining_m": "Proximity to nearest mining or coal region",
+        "distance_to_landfill_m": "Proximity to nearest waste disposal site or landfill boundary",
         "persistence_days": "Number of days hotspot recurred at coordinate in last 30 days",
         "ndvi": "Real Sentinel-2 satellite vegetation index (NIR-Red)/(NIR+Red)",
-        "ndbi": "Real Sentinel-2 normalized difference built-up index (SWIR-NIR)/(SWIR+NIR)",
         "anomaly_score": "Isolation Forest deviation score relative to coordinate baseline"
     }
 
@@ -119,7 +121,7 @@ def get_explainability_metrics():
     feature_weights.sort(key=lambda x: x.weight, reverse=True)
 
     thresholds = {
-        "suppression_persistence_days": 15,
+        "suppression_persistence_days": 10,
         "frp_explosion_spike_pct": 300.0,
         "refinery_safety_buffer_default_m": 1000.0,
         "critical_priority_threshold": 60,

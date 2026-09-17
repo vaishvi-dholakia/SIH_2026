@@ -129,12 +129,19 @@ class FIRMSFetcher:
                 dt_str = f"{acq_date} {hour:02d}:{minute:02d}:00"
                 detected_at = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
+                # Parse NASA FIRMS type attribute (0: Veg, 1: Volcano, 2: Static Land, 3: Offshore)
+                try:
+                    firms_type = int(row.get("type", 0))
+                except (ValueError, TypeError):
+                    firms_type = 0
+
                 records.append({
                     "latitude": lat,
                     "longitude": lon,
                     "brightness": brightness,
                     "frp": frp,
                     "confidence": confidence,
+                    "firms_type": firms_type,
                     "detected_at": detected_at
                 })
             except Exception as parse_err:
@@ -173,71 +180,103 @@ class FIRMSFetcher:
         brightness = raw["brightness"]
         frp = raw["frp"]
         confidence = raw["confidence"]
+        firms_type = raw.get("firms_type", 0)
         detected_at = raw["detected_at"]
 
         # Step 1: Spatial Analysis
         spatial_res = SpatialAnalyser.analyse_point(lat, lon, db)
 
-        # Step 2: Suppression Check
-        is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
-            SuppressionEngine.evaluate(
-                lat=lat,
-                lon=lon,
-                current_frp=frp,
-                nearest_refinery_id=spatial_res.nearest_refinery_id,
-                detected_at=detected_at,
-                db=db
-            )
-        )
-
-        # Step 3: Conditional Satellite Trigger
+        # Step 2 & 3: Pre-Routing Decision based on NASA FIRMS type
         ndvi = None
-        ndbi = None
         ndvi_pending = False
-        ndbi_pending = False
+        classification_class = "01"
+        is_critical_alarm = False
 
-        if is_suppressed:
-            # Check historical database for any previously recorded real NDVI/NDBI value at this exact coordinate
-            coord_tol = 0.002
-            past_rec = db.query(ActiveHotspot.ndvi, ActiveHotspot.ndbi).filter(
-                ActiveHotspot.latitude.between(lat - coord_tol, lat + coord_tol),
-                ActiveHotspot.longitude.between(lon - coord_tol, lon + coord_tol),
-                ActiveHotspot.ndvi.isnot(None)
-            ).first()
+        if firms_type in [2, 3]:
+            # Static Land Source or Offshore -> Route directly to Industrial 1km Geofence Check
+            is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
+                SuppressionEngine.evaluate(
+                    lat=lat,
+                    lon=lon,
+                    current_frp=frp,
+                    nearest_refinery_id=spatial_res.nearest_refinery_id,
+                    detected_at=detected_at,
+                    db=db
+                )
+            )
 
-            if past_rec and past_rec[0] is not None:
-                ndvi = past_rec[0]
-                ndbi = past_rec[1]
-                ndvi_pending = False
-                ndbi_pending = False
-            else:
-                ndvi = None
-                ndbi = None
+            if frp_ratio > 3.0:
+                # EMERGENCY SURGE (>300% FRP) -> Bypass suppression immediately
+                classification_class = "02"
+                classification = "Potential Industrial Incident"
+                is_suppressed = False
+                is_critical_alarm = True
                 ndvi_pending = True
-                ndbi_pending = True
-        else:
-            # Unsuppressed: Trigger real Sentinel-2 multispectral pipeline
-            ndvi, ndbi, _pending_flag = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
-            ndvi_pending = (ndvi is None)
-            ndbi_pending = (ndbi is None)
+            elif is_suppressed:
+                classification_class = "01"
+                classification = "Potential Industrial Thermal Source"
+                ndvi = None
+                ndvi_pending = False
+            else:
+                classification_class = "02"
+                classification = "Potential Industrial Incident"
+                is_suppressed = False
+                ndvi_pending = True
 
-        # Step 4: Dual-Model Inference & Unified Scoring
-        classification, model_conf, anomaly_score = classifier_service.predict(
-            brightness=brightness,
-            frp=frp,
-            confidence=confidence,
-            distance_to_refinery_m=spatial_res.distance_to_refinery_m,
-            distance_to_population_m=spatial_res.distance_to_population_m,
-            distance_to_forest_m=spatial_res.distance_to_forest_m,
-            distance_to_farmland_m=spatial_res.distance_to_farmland_m,
-            distance_to_mining_m=spatial_res.distance_to_mining_m,
-            distance_to_landfill_m=spatial_res.distance_to_landfill_m,
-            persistence_days=persistence_days,
-            ndvi=ndvi,
-            ndbi=ndbi,
-            is_suppressed=is_suppressed,
-            db=db
-        )
+            model_conf = 0.95
+            anomaly_score = min(1.0, frp_ratio / 3.0) if frp_ratio > 1.0 else 0.1
+        
+        elif firms_type == 0:
+            # Presumed Vegetation -> Route to Vegetation Engine (OSM + Sentinel-2 NDVI)
+            from app.services.vegetation_engine import VegetationEngine
+            classification_class, classification, ndvi = await VegetationEngine.process_vegetation_hotspot(lat, lon, frp)
+            is_suppressed = False
+            is_critical_alarm = (frp > 100.0)
+            ndvi_pending = (ndvi is None)
+            model_conf = 0.90
+            anomaly_score = 0.2
+            persistence_days = 1
+        
+        else:
+            # Standard Dual-Model Inference & Scoring
+            is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
+                SuppressionEngine.evaluate(
+                    lat=lat,
+                    lon=lon,
+                    current_frp=frp,
+                    nearest_refinery_id=spatial_res.nearest_refinery_id,
+                    detected_at=detected_at,
+                    db=db
+                )
+            )
+            classification, model_conf, anomaly_score = classifier_service.predict(
+                brightness=brightness,
+                frp=frp,
+                confidence=confidence,
+                distance_to_refinery_m=spatial_res.distance_to_refinery_m,
+                distance_to_population_m=spatial_res.distance_to_population_m,
+                distance_to_forest_m=spatial_res.distance_to_forest_m,
+                distance_to_farmland_m=spatial_res.distance_to_farmland_m,
+                distance_to_mining_m=spatial_res.distance_to_mining_m,
+                distance_to_landfill_m=spatial_res.distance_to_landfill_m,
+                persistence_days=persistence_days,
+                ndvi=ndvi,
+                is_suppressed=is_suppressed,
+                db=db,
+                firms_type=firms_type
+            )
+            if "Incident" in classification:
+                classification_class = "02"
+            elif "Thermal Source" in classification or "Industrial" in classification:
+                classification_class = "01"
+            elif "Forest" in classification:
+                classification_class = "03"
+            elif "Agricultural" in classification:
+                classification_class = "04"
+            elif "Mining" in classification:
+                classification_class = "05"
+            else:
+                classification_class = "06"
 
         from app.services.scoring import calculate_unified_hazard_score
         priority_score = calculate_unified_hazard_score(
@@ -249,8 +288,11 @@ class FIRMSFetcher:
             is_suppressed=is_suppressed
         )
 
+        if priority_score >= 80:
+            is_critical_alarm = True
+
+
         # Step 5: Upsert into ActiveHotspot Table
-        # Check if record at same coordinate and acquisition timestamp already exists
         existing = db.query(ActiveHotspot).filter(
             ActiveHotspot.latitude == lat,
             ActiveHotspot.longitude == lon,
@@ -262,12 +304,10 @@ class FIRMSFetcher:
             hotspot.brightness = brightness
             hotspot.frp = frp
             hotspot.confidence = confidence
+            hotspot.firms_type = firms_type
             if ndvi is not None:
                 hotspot.ndvi = ndvi
                 hotspot.ndvi_pending = False
-            if ndbi is not None:
-                hotspot.ndbi = ndbi
-                hotspot.ndbi_pending = False
             hotspot.persistence_days = persistence_days
             hotspot.distance_to_refinery_m = spatial_res.distance_to_refinery_m
             hotspot.distance_to_population_m = spatial_res.distance_to_population_m
@@ -277,6 +317,7 @@ class FIRMSFetcher:
             hotspot.distance_to_landfill_m = spatial_res.distance_to_landfill_m
             hotspot.anomaly_score = anomaly_score
             hotspot.priority_score = priority_score
+            hotspot.classification_class = classification_class
             hotspot.classification = classification
             hotspot.model_confidence = model_conf
             hotspot.is_suppressed = is_suppressed
@@ -288,10 +329,9 @@ class FIRMSFetcher:
                 brightness=brightness,
                 frp=frp,
                 confidence=confidence,
+                firms_type=firms_type,
                 ndvi=ndvi,
-                ndbi=ndbi,
                 ndvi_pending=ndvi_pending,
-                ndbi_pending=ndbi_pending,
                 persistence_days=persistence_days,
                 distance_to_refinery_m=spatial_res.distance_to_refinery_m,
                 distance_to_population_m=spatial_res.distance_to_population_m,
@@ -302,6 +342,7 @@ class FIRMSFetcher:
                 anomaly_score=anomaly_score,
                 priority_score=priority_score,
                 detected_at=detected_at,
+                classification_class=classification_class,
                 classification=classification,
                 model_confidence=model_conf,
                 is_suppressed=is_suppressed,

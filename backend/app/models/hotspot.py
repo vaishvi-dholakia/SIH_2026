@@ -12,12 +12,11 @@ class ActiveHotspot(Base):
     brightness = Column(Float, nullable=False)  # Brightness Temperature in Kelvin
     frp = Column(Float, nullable=False, index=True)  # Fire Radiative Power in MW
     confidence = Column(Float, nullable=False)  # 0 - 100%
+    firms_type = Column(Integer, default=0, nullable=False, index=True)  # 0: Vegetation, 1: Volcano, 2: Static Land, 3: Offshore
     
-    # Real Sentinel-2 calculated NDVI and NDBI values at hotspot location, Null if pending/unavailable
+    # Real Sentinel-2 calculated NDVI value at hotspot location, Null if pending/unavailable (strictly zero NDBI)
     ndvi = Column(Float, nullable=True)
-    ndbi = Column(Float, nullable=True)
     ndvi_pending = Column(Boolean, default=True, nullable=False)
-    ndbi_pending = Column(Boolean, default=True, nullable=False)
     
     persistence_days = Column(Integer, default=1, nullable=False)
     distance_to_refinery_m = Column(Float, nullable=False, default=999999.0)
@@ -32,9 +31,8 @@ class ActiveHotspot(Base):
     
     detected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     
-    # Canonical String representation:
-    # "Potential Industrial Incident", "Potential Industrial Thermal Source", "Forest Fire / Wildfire",
-    # "Agricultural / Stubble Burning", "Mining Area / Coal Mine Fire", "Urban / Landfill Fire", "Unknown"
+    # 6-Class Taxonomy: '01' (Industrial Source), '02' (Industrial Incident), '03' (Forest Fire), '04' (Agricultural Fire), '05' (Mining Fire), '06' (Urban/Landfill Fire)
+    classification_class = Column(String(10), default="01", nullable=False, index=True)
     classification = Column(String(100), default="Unknown", nullable=False, index=True)
     model_confidence = Column(Float, default=0.0, nullable=False)
     is_suppressed = Column(Boolean, default=False, nullable=False, index=True)

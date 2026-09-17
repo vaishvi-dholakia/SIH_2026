@@ -1,8 +1,25 @@
-import React from 'react';
-import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check } from 'lucide-react';
+import { updateHotspotStatus } from '../api/client';
 
-export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, onViewHistory, onInspectTelemetry }) {
+export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, onViewHistory, onInspectTelemetry, onStatusUpdated }) {
   if (!incident) return null;
+
+  const [currentStatus, setCurrentStatus] = useState(incident.status || 'new');
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleMarkReviewed = async () => {
+    setIsUpdating(true);
+    try {
+      await updateHotspotStatus(incident.id, 'reviewed');
+      setCurrentStatus('reviewed');
+      if (onStatusUpdated) onStatusUpdated(incident.id, 'reviewed');
+    } catch (err) {
+      console.error('Failed to update status:', err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const isCritical = incident.priority === 'Critical' || incident.hazardScore >= 80;
   const isHigh = incident.priority === 'High' || (incident.hazardScore >= 60 && incident.hazardScore < 80);
@@ -61,28 +78,39 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+      <div className="bg-[#242424] border border-[#383838] rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
         
         {/* Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-slate-900 z-10">
+        <div className="p-6 border-b border-[#383838] flex items-center justify-between sticky top-0 bg-[#242424] z-10">
           <div className="space-y-1">
-            <div className={`inline-flex items-center gap-2 px-3 py-1 ${theme.badge} border text-xs font-bold rounded-full uppercase tracking-wider`}>
-              <span className={`w-2 h-2 rounded-full ${theme.dot} animate-ping`} />
-              <span>
-                {isCritical ? '🔴 CRITICAL INCIDENT' : isHigh ? '🟠 HIGH RISK INCIDENT' : isMedium ? '🟡 MEDIUM RISK EVENT' : '🟢 ROUTINE SOURCE'}
+            <div className="flex items-center gap-2">
+              <div className={`inline-flex items-center gap-2 px-3 py-1 ${theme.badge} border text-xs font-bold rounded-full uppercase tracking-wider`}>
+                <span className={`w-2 h-2 rounded-full ${theme.dot} animate-ping`} />
+                <span>
+                  {isCritical ? '🔴 CRITICAL INCIDENT' : isHigh ? '🟠 HIGH RISK INCIDENT' : isMedium ? '🟡 MEDIUM RISK EVENT' : '🟢 ROUTINE SOURCE'}
+                </span>
+              </div>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
+                currentStatus?.toLowerCase() === 'new'
+                  ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                  : currentStatus?.toLowerCase() === 'reviewed'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+              }`}>
+                Status: {currentStatus}
               </span>
             </div>
-            <h2 className="text-xl font-black text-white tracking-tight">
+            <h2 className="text-xl font-black text-[#F5F5F5] tracking-tight">
               {incident.classification}
             </h2>
             <p className="text-sm font-semibold text-slate-400">
-              {incident.nearestFacility}
+              {incident.locationDisplay || incident.nearestFacility}
             </p>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+            className="p-2 text-slate-400 hover:text-white bg-[#161616] hover:bg-[#383838] rounded-lg transition-colors border border-[#383838] cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -91,8 +119,8 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
         <div className="p-6 space-y-6 flex-1">
           
           {/* Large Visual Hazard Score */}
-          <div className="bg-slate-950 border border-slate-800 p-6 rounded-xl text-center space-y-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Unified Hazard Score</span>
+          <div className="bg-[#161616] border border-[#383838] p-6 rounded-xl text-center space-y-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Unified Risk Score</span>
             <div className={`text-5xl font-black ${theme.scoreText} tracking-tight`}>
               {incident.hazardScore} <span className="text-2xl text-slate-500 font-bold">/ 100</span>
             </div>
@@ -102,7 +130,7 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
           </div>
 
           {/* WHY WAS THIS ALERT GENERATED? */}
-          <div className="bg-slate-950/60 border border-slate-800 p-5 rounded-xl space-y-3">
+          <div className="bg-[#161616]/60 border border-[#383838] p-5 rounded-xl space-y-3">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
               <ShieldAlert className={`w-4 h-4 ${theme.iconColor}`} />
               <span>Why Was This Alert Generated?</span>
@@ -118,100 +146,28 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
             </div>
           </div>
 
-          {/* Event Information Cards */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Event Telemetry</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-400 block">Current FRP</span>
-                <strong className="text-lg font-black text-amber-400">{incident.frp} MW</strong>
-              </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-400 block">Normal Baseline FRP</span>
-                <strong className="text-lg font-black text-slate-300">{incident.normalFrp} MW</strong>
-              </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-400 block">Baseline Change</span>
-                <strong className="text-lg font-black text-red-400">
-                  {incident.frpChangePercent > 0 ? `+${incident.frpChangePercent}%` : `${incident.frpChangePercent}%`}
-                </strong>
-              </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-400 block">Sensor Confidence</span>
-                <strong className="text-lg font-black text-emerald-400">{incident.confidence}%</strong>
-              </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-400 block">First Detected</span>
-                <strong className="text-sm font-bold text-white">{incident.firstDetected} UTC</strong>
-              </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-                <span className="text-xs text-slate-400 block">Last Updated</span>
-                <strong className="text-sm font-bold text-white">{incident.lastUpdated} UTC</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* AI Classification & Location Context */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Classification</span>
-              <div className="text-base font-bold text-white">{incident.classification}</div>
-              <div className="text-xs text-slate-400">Model Confidence: <strong className="text-emerald-400">{incident.classificationConfidence}%</strong></div>
-            </div>
-
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Location Context</span>
-              <div className="text-sm font-bold text-white">{incident.locationType}</div>
-              <div className="text-xs text-slate-400">Nearest Facility: <strong className="text-slate-200">{incident.nearestFacility}</strong></div>
-              <div className="text-xs text-slate-400">
-                Population Proximity: <strong className="text-amber-400">
-                  {incident.distanceToPopulationM == null || incident.distanceToPopulationM >= 50000
-                    ? "> 50 km (Rural Area)"
-                    : incident.distanceToPopulationM >= 1000
-                    ? `${(incident.distanceToPopulationM / 1000).toFixed(1)} km`
-                    : `${Math.round(incident.distanceToPopulationM)} meters`}
-                </strong>
-              </div>
-            </div>
-
-          </div>
-
           {/* Recommended Action Protocol */}
           <div className={`${theme.actionBox} border p-5 rounded-xl space-y-4`}>
-            <div className="flex items-center gap-2 font-bold text-sm">
-              {isCritical ? (
-                <>
-                  <ShieldAlert className="w-5 h-5 text-red-400" />
-                  <span>🚨 CRITICAL EMERGENCY ALERT — Immediate Verification & Inter-Agency Response Triggered</span>
-                </>
-              ) : isHigh ? (
-                <>
-                  <AlertTriangle className="w-5 h-5 text-amber-400" />
-                  <span>⚡ HIGH RISK EVENT — Priority Inspection & Verification Recommended</span>
-                </>
-              ) : isMedium ? (
-                <>
-                  <AlertTriangle className="w-5 h-5 text-yellow-400" />
-                  <span>🟡 MODERATE RISK ANOMALY — Sensor Monitoring & Routine Field Check</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  <span>🟢 ROUTINE SOURCE — Standard Operational Flaring / Agricultural Monitoring</span>
-                </>
+            <div className="flex items-center justify-between font-bold text-sm">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <span>Control Room Triage Command Protocol</span>
+              </div>
+              {currentStatus !== 'reviewed' && (
+                <button
+                  onClick={handleMarkReviewed}
+                  disabled={isUpdating}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-lg shadow-md transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isUpdating ? 'UPDATING...' : 'MARK AS REVIEWED'}</span>
+                </button>
               )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
               <button
                 onClick={() => onInspectTelemetry ? onInspectTelemetry(incident) : onViewOnMap(incident)}
-                title="Open this incident's live sensor readings (FRP, brightness, NDVI/NDBI, confidence) in the Telemetry Panel on the Map page"
                 className="w-full sm:w-1/3 py-3 bg-[#1D4ED8] hover:bg-blue-600 text-white font-bold text-xs rounded-lg shadow-md transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <Activity className="w-4 h-4" />
@@ -220,7 +176,6 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
 
               <button
                 onClick={() => onViewOnMap(incident)}
-                title="Center and zoom the map on this incident's location"
                 className="w-full sm:w-1/3 py-3 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-lg shadow-md transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <MapIcon className="w-4 h-4" />
@@ -229,8 +184,7 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
 
               <button
                 onClick={() => onViewHistory(incident)}
-                title="View this incident's historical FRP trend over the last 30 days"
-                className="w-full sm:w-1/3 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-lg border border-slate-700 transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                className="w-full sm:w-1/3 py-3 bg-[#383838] hover:bg-[#4a4a4a] text-white font-bold text-xs rounded-lg border border-[#4a4a4a] transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <History className="w-4 h-4" />
                 <span>VIEW HISTORY</span>

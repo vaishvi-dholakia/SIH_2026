@@ -166,18 +166,7 @@ def test_ndvi_calculation_and_pure_null_handling(test_db):
     expected_mean = (0.6 + 0.5 + 0.0 + 0.0) / 4.0
     assert np.isclose(mean_val, expected_mean)
 
-    # Test NDBI = (SWIR - NIR) / (SWIR + NIR)
-    swir_array = np.array([
-        [0.9, 0.7],
-        [0.5, 0.0]
-    ])
-    # [0, 0]: (0.9 - 0.8) / (0.9 + 0.8) = 0.1 / 1.7
-    ndbi_matrix = SentinelNDVIService.calculate_ndbi_array(swir_array, nir_array)
-    assert np.isclose(ndbi_matrix[0, 0], 0.1 / 1.7)
-    mean_ndbi = SentinelNDVIService.calculate_mean_ndbi(swir_array, nir_array)
-    assert mean_ndbi is not None
-
-    # Verify that suppressed hotspot without prior NDVI/NDBI writes ndvi=None, ndbi=None, pending=True
+    # Verify that suppressed hotspot without prior NDVI writes ndvi=None, ndvi_pending=True
     # and strictly does NOT write placeholder constants to the database
     new_suppressed = ActiveHotspot(
         latitude=23.100,
@@ -186,9 +175,7 @@ def test_ndvi_calculation_and_pure_null_handling(test_db):
         frp=12.0,
         confidence=80.0,
         ndvi=None,
-        ndbi=None,
         ndvi_pending=True,
-        ndbi_pending=True,
         is_suppressed=True,
         status="new"
     )
@@ -197,9 +184,7 @@ def test_ndvi_calculation_and_pure_null_handling(test_db):
 
     saved_rec = test_db.query(ActiveHotspot).filter(ActiveHotspot.id == new_suppressed.id).first()
     assert saved_rec.ndvi is None
-    assert saved_rec.ndbi is None
     assert saved_rec.ndvi_pending is True
-    assert saved_rec.ndbi_pending is True
     assert saved_rec.ndvi != 0.15
 
 # ==============================================================================

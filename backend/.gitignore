@@ -7,9 +7,8 @@ __pycache__/
 .env
 .env.local
 
-# Database
-*.db
-geoscd.db
+# Database (Explicitly track geoscd.db so pre-seeded satellite data is NOT lost on git push!)
+!geoscd.db
 
 # Test & coverage
 .pytest_cache/

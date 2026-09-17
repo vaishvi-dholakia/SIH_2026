@@ -15,52 +15,78 @@ export default function AlertFeed({
   });
 
   return (
-    <div className={`relative transition-all duration-300 flex flex-col bg-[#151A26] border-l border-[#262F40] h-full font-sans ${
-      collapsed ? 'w-12' : 'w-80'
+    <div className={`relative transition-all duration-300 flex flex-col bg-[#242424] border-l border-[#383838] h-full font-sans select-none ${
+      collapsed ? 'w-11' : 'w-64'
     }`}>
       
-      {/* Collapse Toggle Button */}
-      <button
-        onClick={onToggleCollapse}
-        className="absolute -left-3 top-4 z-40 bg-[#1D4ED8] hover:bg-blue-600 text-white p-1 rounded-full shadow-lg transition-transform active:scale-95 cursor-pointer"
-        title={collapsed ? 'Show Alert Feed' : 'Hide Alert Feed'}
-      >
-        {collapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-      </button>
-
       {collapsed ? (
-        /* Collapsed Thin Rail */
-        <div className="py-6 flex flex-col items-center gap-6 text-slate-400">
-          <div className="relative">
-            <Bell className="w-5 h-5 text-red-500" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+        /* Collapsed Compact Icon Rail */
+        <div className="flex flex-col items-center h-full w-full relative">
+          {/* Top Integrated Expand Button */}
+          <button
+            onClick={onToggleCollapse}
+            className="w-full py-3 bg-[#161616] hover:bg-[#2c2c2c] text-slate-300 hover:text-white border-b border-[#383838] flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer group shrink-0"
+            title="Expand Live Alert Feed"
+          >
+            <div className="relative">
+              <Bell className="w-4 h-4 text-red-400" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            </div>
+            <ChevronLeft className="w-3.5 h-3.5 text-blue-400 group-hover:-translate-x-0.5 transition-transform" />
+          </button>
+
+          {/* Centered Rotated Vertical Strip (Unclipped) */}
+          <div
+            onClick={onToggleCollapse}
+            className="flex-1 w-full flex items-center justify-center cursor-pointer hover:bg-[#2c2c2c] transition-colors relative"
+            title="Click to expand Live Alert Feed"
+          >
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 whitespace-nowrap text-[11px] font-mono font-bold tracking-widest text-slate-300 hover:text-white transition-colors flex items-center gap-2 select-none">
+              <span className="uppercase">LIVE ALERTS</span>
+              <span className="bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded text-[10px] border border-red-500/30 font-mono">
+                {safeIncidents.length}
+              </span>
+            </div>
           </div>
-          <span className="writing-mode-vertical text-xs font-black uppercase tracking-widest text-slate-400 font-mono">
-            LIVE ALERTS ({safeIncidents.length})
-          </span>
+
+          {/* Bottom Subtle Icon */}
+          <div className="pb-3 text-slate-500 shrink-0">
+            <Flame className="w-4 h-4 text-amber-500/70" />
+          </div>
         </div>
       ) : (
-        /* Full Expanded Right Feed */
+        /* Expanded Compact Feed (Tight Fit Width) */
         <div className="flex flex-col h-full overflow-hidden">
           
-          {/* Header */}
-          <div className="p-4 border-b border-[#262F40] flex items-center justify-between">
+          {/* Header Bar */}
+          <div className="p-2.5 border-b border-[#383838] flex items-center justify-between bg-[#161616]/90">
             <div className="flex items-center gap-2">
-              <Bell className="w-4 h-4 text-red-500" />
-              <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                LIVE ALERT FEED
+              <div className="relative flex items-center justify-center">
+                <Bell className="w-3.5 h-3.5 text-red-400 animate-pulse shrink-0" />
+              </div>
+              <h3 className="text-[11px] font-black text-white uppercase tracking-wider font-mono flex items-center gap-1.5">
+                <span>LIVE ALERTS</span>
+                <span className="bg-red-500/20 text-red-400 px-1.5 py-0.2 rounded text-[10px] border border-red-500/30 font-mono">
+                  {safeIncidents.length}
+                </span>
               </h3>
             </div>
-            <span className="px-2 py-0.5 text-xs font-mono font-bold bg-red-500/20 text-red-400 border border-red-500/40 rounded-full">
-              {safeIncidents.length} Telemetries
-            </span>
+            
+            {/* Sleek Header Collapse Button */}
+            <button
+              onClick={onToggleCollapse}
+              className="p-1 bg-[#242424] hover:bg-[#383838] text-slate-400 hover:text-white rounded border border-[#383838] transition-colors cursor-pointer"
+              title="Collapse Panel"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* Cards List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+          {/* Cards List (Compact Padding) */}
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
             {safeIncidents.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400 space-y-2">
-                <Flame className="w-6 h-6 text-slate-500 mx-auto animate-bounce" />
+              <div className="p-4 text-center text-[11px] text-slate-400 space-y-2">
+                <Flame className="w-5 h-5 text-slate-500 mx-auto animate-bounce" />
                 <p>Waiting for live satellite telemetry broadcast...</p>
               </div>
             ) : (
@@ -72,15 +98,15 @@ export default function AlertFeed({
                   <div
                     key={`alert-${inc.id || idx}`}
                     onClick={() => onSelectHotspot(inc)}
-                    className={`p-3 rounded-lg border transition-all cursor-pointer relative ${
+                    className={`p-2.5 rounded-lg border transition-all cursor-pointer relative ${
                       isSelected
-                        ? 'bg-slate-800 border-red-500 shadow-md ring-1 ring-red-500/50'
-                        : 'bg-[#0B0E14] border-[#262F40] hover:border-slate-700 hover:bg-slate-900/60'
+                        ? 'bg-[#383838] border-red-500 shadow-md ring-1 ring-red-500/50'
+                        : 'bg-[#161616] border-[#383838] hover:border-slate-500 hover:bg-[#2c2c2c]'
                     } ${isCritical ? 'pulse-ring-crimson' : ''}`}
                   >
                     {/* Top Row: Priority Badge & FRP */}
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                    <div className="flex items-center justify-between gap-1.5 mb-1">
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
                         inc.priority === 'Critical' ? 'bg-red-500/20 text-red-400 border border-red-500/40' :
                         inc.priority === 'High' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' :
                         inc.priority === 'Medium' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40' :
@@ -88,24 +114,24 @@ export default function AlertFeed({
                       }`}>
                         {inc.priority || 'Routine'}
                       </span>
-                      <span className="font-mono text-xs font-bold text-amber-400">
+                      <span className="font-mono text-[11px] font-bold text-amber-400">
                         {inc.frp || 0} MW
                       </span>
                     </div>
 
                     {/* Title */}
-                    <h4 className="text-xs font-bold text-white line-clamp-1">
+                    <h4 className="text-[11px] font-bold text-[#F5F5F5] line-clamp-1">
                       {inc.classification || 'Thermal Anomaly'}
                     </h4>
 
-                    {/* Subtitle Facility */}
-                    <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                      {inc.nearestFacility || 'Industrial Zone'}
+                    {/* Subtitle Facility & Location */}
+                    <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
+                      {inc.locationDisplay || inc.nearestFacility || 'Industrial Zone'}
                     </p>
 
-                    {/* Footer Row: Coordinates & Time */}
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-2 mt-2 border-t border-[#262F40]/60 font-mono">
-                      <span>{inc.latitude ? Number(inc.latitude).toFixed(3) : '22.350'}°, {inc.longitude ? Number(inc.longitude).toFixed(3) : '69.850'}°</span>
+                    {/* Footer Row: Landuse & Time */}
+                    <div className="flex items-center justify-between text-[9px] text-slate-400 pt-1.5 mt-1.5 border-t border-[#383838]/60 font-mono">
+                      <span>{inc.landuse || inc.state || 'Zone'}</span>
                       <span className="text-slate-300">{inc.firstDetected || 'Live'}</span>
                     </div>
                   </div>

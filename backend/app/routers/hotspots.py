@@ -15,6 +15,8 @@ from app.schemas.hotspot import (
     SimulateHotspotRequest
 )
 
+from app.models.refinery import Refinery
+
 router = APIRouter(prefix="/api/hotspots", tags=["Hotspots"])
 
 @router.get("/realtime", response_model=HotspotGeoJSONCollection)
@@ -41,8 +43,26 @@ def get_realtime_hotspots(
 
     hotspots = query.order_by(desc(ActiveHotspot.detected_at)).limit(1000).all()
 
+    ref_ids = {h.nearest_refinery_id for h in hotspots if h.nearest_refinery_id}
+    refinery_map = {}
+    if ref_ids:
+        refinery_map = {r.id: r.name for r in db.query(Refinery).filter(Refinery.id.in_(ref_ids)).all()}
+
+    from app.ml.classifier import DualModelClassifier
+
     features = []
     for h in hotspots:
+        ref_name = refinery_map.get(h.nearest_refinery_id) or (h.nearest_refinery.name if h.nearest_refinery else None)
+        reasons = DualModelClassifier.generate_xai_explanations(
+            classification=h.classification,
+            frp=h.frp,
+            distance_to_refinery_m=h.distance_to_refinery_m,
+            distance_to_population_m=h.distance_to_population_m,
+            persistence_days=h.persistence_days or 1,
+            ndvi=h.ndvi,
+            anomaly_score=h.anomaly_score or 0.0,
+            refinery_name=ref_name
+        )
         features.append(HotspotGeoJSONFeature(
             type="Feature",
             geometry={
@@ -56,8 +76,6 @@ def get_realtime_hotspots(
                 "confidence": h.confidence,
                 "ndvi": h.ndvi,
                 "ndvi_pending": h.ndvi_pending,
-                "ndbi": getattr(h, "ndbi", None),
-                "ndbi_pending": getattr(h, "ndbi_pending", getattr(h, "ndbi", None) is None),
                 "persistence_days": h.persistence_days,
                 "distance_to_refinery_m": h.distance_to_refinery_m,
                 "distance_to_population_m": h.distance_to_population_m,
@@ -68,7 +86,9 @@ def get_realtime_hotspots(
                 "is_suppressed": h.is_suppressed,
                 "status": h.status,
                 "detected_at": h.detected_at.isoformat(),
-                "nearest_refinery_id": h.nearest_refinery_id
+                "nearest_refinery_id": h.nearest_refinery_id,
+                "nearest_refinery_name": ref_name or "Open Region Facility",
+                "reasons": reasons
             }
         ))
 
@@ -126,11 +146,11 @@ def get_hotspot_stats(db: Session = Depends(get_db)):
 @router.get("/logs", response_model=HotspotLogsResponse)
 def get_hotspot_logs(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=10000),
     search: Optional[str] = Query(None, description="Search by classification or status"),
     sort_by: str = Query("detected_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    status: Optional[str] = Query(None, pattern="^(new|reviewed|resolved)$"),
+    status: Optional[str] = Query(None, pattern="^(new|reviewed|suppressed|resolved)$"),
     db: Session = Depends(get_db)
 ):
     """
@@ -162,12 +182,22 @@ def get_hotspot_logs(
     offset = (page - 1) * page_size
     records = query.offset(offset).limit(page_size).all()
 
+    ref_ids = {r.nearest_refinery_id for r in records if r.nearest_refinery_id}
+    refinery_map = {}
+    if ref_ids:
+        refinery_map = {ref.id: ref.name for ref in db.query(Refinery).filter(Refinery.id.in_(ref_ids)).all()}
+
+    out_records = []
+    for r in records:
+        setattr(r, "nearest_refinery_name", refinery_map.get(r.nearest_refinery_id) or (r.nearest_refinery.name if r.nearest_refinery else "Open Region Facility"))
+        out_records.append(r)
+
     return HotspotLogsResponse(
         total=total,
         page=page,
         page_size=page_size,
         total_pages=total_pages,
-        data=records
+        data=out_records
     )
 
 @router.patch("/{hotspot_id}/status", response_model=HotspotOut)
@@ -319,7 +349,6 @@ async def simulate_hotspot(
 
     persistence_days = 1 if sim_type == "INDUSTRIAL_INCIDENT" else random.randint(1, 10)
     ndvi = round(random.uniform(0.08, 0.22), 3) if spatial_res.distance_to_refinery_m < 2000 else round(random.uniform(0.45, 0.75), 3)
-    ndbi = round(random.uniform(0.25, 0.45), 3) if spatial_res.distance_to_refinery_m < 2000 else round(random.uniform(0.05, 0.18), 3)
     anomaly_score = round(random.uniform(0.5, 0.95), 2) if (sim_type == "INDUSTRIAL_INCIDENT" or not is_suppressed) else round(random.uniform(0.05, 0.25), 2)
     model_conf = round(random.uniform(0.85, 0.98), 2)
 
@@ -332,14 +361,13 @@ async def simulate_hotspot(
         is_suppressed=is_suppressed
     )
 
-    new_sim = SimulatedHotspot(
+    new_sim = ActiveHotspot(
         latitude=lat,
         longitude=lon,
         brightness=brightness,
         frp=frp,
         confidence=confidence,
         ndvi=ndvi,
-        ndbi=ndbi,
         persistence_days=persistence_days,
         distance_to_refinery_m=spatial_res.distance_to_refinery_m,
         distance_to_population_m=spatial_res.distance_to_population_m,
