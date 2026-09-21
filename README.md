@@ -234,8 +234,7 @@ Thermal & Physical (4)          Spatial Proximity (5)           Temporal & Weath
 The 0–100 Priority Threat Score adapts dynamically based on location context:
 
 * **Mode A: Natural / Biomass / Urban Fires (Classes 03, 04, 05, 06)**  
-  $$\text{Score} = (0.35 \times \text{FRP Norm}) + (0.25 \times \text{Anomaly Score}) + (0.25 \times \text{Population Risk}) + (0.15 \times \text{Dryness Risk})$$  
-  *Where $\text{Dryness Risk} = 100 - \text{Relative Humidity \%}$.*
+  $$\text{Score} = (0.35 \times \text{FRP Norm}) + (0.25 \times \text{Anomaly Score}) + (0.25 \times \text{Population Risk}) + (0.15 \times \text{Dryness Risk})$$  *Where **Dryness Risk** = 100 − Relative Humidity (%).*
 
 * **Mode B: Industrial Incidents (Class 02)**  
   $$\text{Score} = \min\left(100, (0.40 \times \text{FRP Ratio Norm}) + (0.30 \times \text{Anomaly Score}) + (0.30 \times \text{Refinery Proximity Score})\right)$$
