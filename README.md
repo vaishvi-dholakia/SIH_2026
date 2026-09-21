@@ -1,7 +1,19 @@
-# GEO-SCD: Geospatial Fire Classification & Intelligence Command Deck
+# GEO-SCD --- Beyond Heat Dots: Precision Fire Intelligence
 
-**Smart India Hackathon 2026 | Problem Statement ID: 26162 (NTRO - Disaster Management)**  
-*Tagline: From Orbit to Action: Zero-Latency Thermal Intelligence*
+> **AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources**
+
+## Project Information
+
+| Field | Details |
+| :--- | :--- |
+| **Project Name** | GEO-SCD |
+| **Full Title** | AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources |
+| **Hackathon** | Smart India Hackathon (SIH 2026) |
+| **Organization** | National Technical Research Organisation (NTRO) |
+| **Theme** | Disaster Management |
+| **Problem Statement ID** | PS-26162 |
+| **Primary Technology Bucket** | AI/ML, Cloud Computing, Remote Sensing |
+| **Core Technologies** | FastAPI, PostgreSQL / PostGIS, PyTorch / Scikit-Learn, Sentinel Hub, NASA FIRMS, OpenStreetMap, React, Leaflet, Tailwind CSS |
 
 > [!IMPORTANT]
 > **Zero-Dummy Data Guarantee**: Every coordinate, temperature, and spectral vegetation index in this system originates from authenticated live satellite feeds (NASA FIRMS & Copernicus Sentinel-2) and geodetic algorithms — zero simulated or fake fallback values.
@@ -49,9 +61,11 @@ While NASA FIRMS (VIIRS 375m & MODIS 1km) provides reliable global thermal anoma
 
 ## 3. Proposed Solution: GEO-SCD Operational Architecture
 
-**GEO-SCD (Geospatial Satellite Classification of Disasters)** addresses these limitations by fusing spaceborne thermal observations with plant-level spatial geofencing, temporal persistence baselines, multispectral satellite verification, and dual-AI classification.
-
-![GEO-SCD System Workflow](./assets/geo-scd-ppt-flowchart.png)
+<p align="center">
+  <img src="./assets/geo-scd-ppt-flowchart.png" alt="GEO-SCD System Architecture & Technical Flowchart" width="100%" />
+  <br>
+  <em>Figure 1: GEO-SCD End-to-End Technical Architecture & 6-Class Operational Flowchart</em>
+</p>
 
 ```text
                      [ STEP 1: MULTI-SENSOR TELEMETRY INGESTION ]
@@ -80,9 +94,9 @@ NASA FIRMS (375m)       NOAA VIIRS Nightfire       Open-Meteo Weather API
               │                                          ▼                        ▼
        ┌──────┴──────┐                        [ Sentinel-2 NDVI ]          [ OSM Polygon Check ]
        ▼             ▼                         NDVI > 0.45 ➔ Class 03      Coalfield ➔ Class 05
-  🟢 Class 01    🔴 Class 02                  NDVI 0.1-0.35 ➔ Class 04    Landfill ➔ Class 06
-  Safe Flare    Industrial Incident             (Forest Fire)  (Stubble)     (Mining)   (Urban)
- (Suppressed)   (Emergency Alert)
+     Class 01      Class 02                   NDVI 0.1-0.35 ➔ Class 04    Landfill ➔ Class 06
+   Safe Flare    Industrial Incident             (Forest Fire)  (Stubble)     (Mining)   (Urban)
+  (Suppressed)   (Emergency Alert)
        │             │                               │            │            │          │
        └─────────────┴───────────────────────────────┴────────────┴────────────┴──────────┘
                                                      │
@@ -114,12 +128,12 @@ GEO-SCD categorizes every detected hotspot into one of 6 operational classes:
 
 | Class ID | Category Name | Primary GIS / Spatial Context | Physical & Telemetry Decision Criteria | System Action & Alert Priority |
 | :--- | :--- | :--- | :--- | :--- |
-| **Class 01 🟢** | Industrial Thermal Source | Inside 1km PostGIS Refinery Buffer | Persistent (>15 days in last 30) AND FRP Ratio < 3.0× baseline | **Auto-Suppressed (`is_suppressed = True`)**. Threat Score capped <25. Saves 90% API calls. |
-| **Class 02 🔴** | Industrial Incident | Inside 1km PostGIS Refinery Buffer | New unmapped spot OR FRP Surge ≥300% (Ratio ≥ 3.0×); Flame Temp >1,500K | **Critical Emergency Alert**. Triggers Sentinel-2 SWIR download. Threat Score 80–100. |
-| **Class 03 🌲** | Forest Fire / Wildfire | Intersects OSM Forest / Wood Polygon | $\text{NDVI} > 0.45$ (Dense green canopy); Flame Temp ~900K (Biomass) | **Warning Alert**. Pushed to forestry & national early warning teams. Threat Score 40–60. |
-| **Class 04 🌾** | Agricultural Fire | Intersects OSM Farmland Polygon | $\text{NDVI} = 0.10 \text{ to } 0.35$ (Harvested stubble residue); Short duration | **Low Risk Alert**. Tracked for seasonal air quality monitoring. Threat Score <40. |
-| **Class 05 🪨** | Mining / Coalfield Fire | Intersects OSM Mining / Quarry Polygon | $\text{NDVI} < 0.10$ (Bare rock/coal dust); Persistent over multiple weeks | **Medium Risk Alert**. Routed to mining safety authorities. Threat Score 40–60. |
-| **Class 06 🏢** | Urban / Landfill Fire | Intersects OSM City / Residential / Landfill Polygon | $\text{NDVI} < 0.10$ (Concrete/dry waste); High population proximity | **Dynamic Alert**. Threat Score scales higher with population density. |
+| **Class 01** | Industrial Thermal Source | Inside 1km PostGIS Refinery Buffer | Persistent (>15 days in last 30) AND FRP Ratio < 3.0× baseline | **Auto-Suppressed (`is_suppressed = True`)**. Threat Score capped <25. Saves 90% API calls. |
+| **Class 02** | Industrial Incident | Inside 1km PostGIS Refinery Buffer | New unmapped spot OR FRP Surge ≥300% (Ratio ≥ 3.0×); Flame Temp >1,500K | **Critical Emergency Alert**. Triggers Sentinel-2 SWIR download. Threat Score 80–100. |
+| **Class 03** | Forest Fire / Wildfire | Intersects OSM Forest / Wood Polygon | $\text{NDVI} > 0.45$ (Dense green canopy); Flame Temp ~900K (Biomass) | **Warning Alert**. Pushed to forestry & national early warning teams. Threat Score 40–60. |
+| **Class 04** | Agricultural Fire | Intersects OSM Farmland Polygon | $\text{NDVI} = 0.10 \text{ to } 0.35$ (Harvested stubble residue); Short duration | **Low Risk Alert**. Tracked for seasonal air quality monitoring. Threat Score <40. |
+| **Class 05** | Mining / Coalfield Fire | Intersects OSM Mining / Quarry Polygon | $\text{NDVI} < 0.10$ (Bare rock/coal dust); Persistent over multiple weeks | **Medium Risk Alert**. Routed to mining safety authorities. Threat Score 40–60. |
+| **Class 06** | Urban / Landfill Fire | Intersects OSM City / Residential / Landfill Polygon | $\text{NDVI} < 0.10$ (Concrete/dry waste); High population proximity | **Dynamic Alert**. Threat Score scales higher with population density. |
 
 ---
 
@@ -159,7 +173,7 @@ Thermal & Physical (4)          Spatial Proximity (5)           Temporal & Weath
    * **Purpose:** Evaluates whether a thermal hotspot exhibits abnormal heat behavior relative to its 30-day baseline.
    * **Input Features:** `[ Brightness Temp, FRP, 30-Day Persistence ]`
    * **Formula:**  
-     $$\text{Normalized Anomaly Score} = \left( \frac{1.0}{1.0 + \exp(3.0 \times \text{decision\_function})} \right) \times 100$$
+     $$\text{Normalized Anomaly Score} = \left( \frac{1.0}{1.0 + \exp(3.0 \times \text{decision function})} \right) \times 100$$
    * **Output:** Anomaly Score ($0 \text{ to } 100$). A high score indicates a sudden thermal spike.
 
 2. **Model 2: Random Forest Classifier (Supervised 6-Class Categorizer)**
@@ -220,14 +234,14 @@ Thermal & Physical (4)          Spatial Proximity (5)           Temporal & Weath
 The 0–100 Priority Threat Score adapts dynamically based on location context:
 
 * **Mode A: Natural / Biomass / Urban Fires (Classes 03, 04, 05, 06)**  
-  $$\text{Score} = (0.35 \times \text{FRP\_Norm}) + (0.25 \times \text{Anomaly\_Score}) + (0.25 \times \text{Population\_Risk}) + (0.15 \times \text{Dryness\_Risk})$$  
-  *Where $\text{Dryness\_Risk} = 100 - \text{Relative\_Humidity\_\%}$.*
+  $$\text{Score} = (0.35 \times \text{FRP Norm}) + (0.25 \times \text{Anomaly Score}) + (0.25 \times \text{Population Risk}) + (0.15 \times \text{Dryness Risk})$$  
+  *Where $\text{Dryness Risk} = 100 - \text{Relative Humidity \%}$.*
 
 * **Mode B: Industrial Incidents (Class 02)**  
-  $$\text{Score} = \min\left(100, (0.40 \times \text{FRP\_Ratio\_Norm}) + (0.30 \times \text{Anomaly\_Score}) + (0.30 \times \text{Refinery\_Proximity\_Score})\right)$$
+  $$\text{Score} = \min\left(100, (0.40 \times \text{FRP Ratio Norm}) + (0.30 \times \text{Anomaly Score}) + (0.30 \times \text{Refinery Proximity Score})\right)$$
 
 * **Mode C: Suppressed Routine Flares (Class 01)**  
-  $$\text{Score} = \min\left(25, \text{Raw\_Score} \times 0.20\right) \quad \text{(Capped } \le 25\text{)}$$
+  $$\text{Score} = \min\left(25, \text{Raw Score} \times 0.20\right) \quad \text{(Capped } \le 25\text{)}$$
 
 ### Cold-Start Mitigation
 
