@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Flame, ShieldAlert, ShieldCheck, Compass, Activity, CheckCircle2, 
-  Search, ChevronDown, Eye, AlertTriangle, Building2, Trees, Tractor, FlaskConical, Filter
+  Search, ChevronDown, ChevronUp, Eye, AlertTriangle, Building2, Trees, Tractor, FlaskConical, Filter
 } from 'lucide-react';
 
 export default function DashboardView({ 
@@ -14,6 +14,7 @@ export default function DashboardView({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState('ALL');
+  const [isTableExpanded, setIsTableExpanded] = useState(false);
 
   const safeIncidents = Array.isArray(incidents) ? incidents.filter(i => i && typeof i === 'object') : [];
 
@@ -113,6 +114,24 @@ export default function DashboardView({
     return matchesSearch && matchesClass;
   });
 
+  // Hotspots for Dashboard Table Display (In-place Expand / Collapse)
+  const displayedIncidents = isTableExpanded ? filteredIncidents : filteredIncidents.slice(0, 10);
+
+  // Helper to compute total hotspot count for each Class (01 - 06)
+  const getClassCount = (clsCode) => {
+    return safeIncidents.filter((inc) => {
+      const cls = inc.classification || '';
+      const code = inc.classificationClass || '';
+      if (clsCode === '01') return code === '01' || cls.includes('Source') || cls.includes('Thermal') || cls.includes('Normal Flare');
+      if (clsCode === '02') return code === '02' || cls.includes('Incident') || cls.includes('Emergency');
+      if (clsCode === '03') return code === '03' || cls.includes('Forest') || cls.includes('Wildfire');
+      if (clsCode === '04') return code === '04' || cls.includes('Agricultural') || cls.includes('Stubble');
+      if (clsCode === '05') return code === '05' || cls.includes('Mining') || cls.includes('Coalfield');
+      if (clsCode === '06') return code === '06' || cls.includes('Urban') || cls.includes('Landfill');
+      return false;
+    }).length;
+  };
+
   const totalActiveCount = summary?.totalHotspots || safeIncidents.length;
   const highRiskCount = summary?.highRisk || safeIncidents.filter(i => i.priority === 'High').length;
   const criticalCount = summary?.critical || safeIncidents.filter(i => i.priority === 'Critical').length;
@@ -183,7 +202,12 @@ export default function DashboardView({
             <div className="p-2 bg-blue-600/20 border border-blue-500/40 rounded-xl text-blue-400">
               <Compass className="w-5 h-5 text-cyan-400" />
             </div>
-            <h2 className="text-base font-extrabold text-[#F5F5F5] tracking-wide">Recent Hotspots</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-extrabold text-[#F5F5F5] tracking-wide">Recent Hotspots</h2>
+              <span className="text-[11px] font-extrabold px-2.5 py-0.5 bg-[#161616] border border-[#383838] text-amber-400 rounded-lg">
+                {isTableExpanded ? `All ${filteredIncidents.length}` : 'Top 10'}
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -235,14 +259,14 @@ export default function DashboardView({
             </thead>
 
             <tbody className="divide-y divide-[#383838]/60 text-[#F5F5F5] font-medium">
-              {filteredIncidents.length === 0 ? (
+              {displayedIncidents.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-8 text-center text-slate-400 text-xs font-mono">
                     No active satellite hotspots match your filter parameters.
                   </td>
                 </tr>
               ) : (
-                filteredIncidents.map((inc, idx) => {
+                displayedIncidents.map((inc, idx) => {
                   const clsDisplay = getClassificationDisplay(inc.classification, inc.classificationClass);
                   const locDisplay = getLocationDisplay(inc);
                   const isMedium = inc.priority === 'Medium' || (inc.hazardScore >= 40 && inc.hazardScore < 60);
@@ -326,6 +350,128 @@ export default function DashboardView({
           </table>
         </div>
 
+        {/* Expand/Collapse Button (Matching User's Screenshot Design) */}
+        {filteredIncidents.length > 10 && (
+          <div className="pt-4 border-t border-[#383838] flex items-center justify-center">
+            <button
+              onClick={() => setIsTableExpanded(!isTableExpanded)}
+              className="px-6 py-2.5 bg-[#161616] hover:bg-[#202020] border border-[#383838] hover:border-blue-500/50 text-blue-400 font-mono text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              {isTableExpanded ? (
+                <>
+                  <ChevronUp className="w-4 h-4 text-blue-400" />
+                  <span>SHOW TOP 10 ONLY</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4 text-blue-400" />
+                  <span>VIEW ALL LIVE ALERTS ({filteredIncidents.length} TOTAL)</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+      </div>
+
+      {/* SECTION 3: 6 CLASSIFICATION KPI CARDS BELOW THE TABLE */}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-blue-600/20 border border-blue-500/40 rounded-lg text-blue-400">
+            <Filter className="w-4 h-4 text-cyan-400" />
+          </div>
+          <h3 className="text-sm font-extrabold text-[#F5F5F5] uppercase tracking-wider">
+            Classification Breakdown (Classes 01 – 06)
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+          
+          {/* Card 1: Class 01 */}
+          <div className="bg-[#242424] border border-[#383838] hover:border-emerald-500/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Class 01</span>
+              <div className="p-2 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-400">
+                <Flame className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="text-2xl font-black text-[#F5F5F5] font-mono">{getClassCount('01')}</div>
+              <div className="text-xs font-semibold text-slate-300 truncate">Industrial / Normal Flare</div>
+            </div>
+          </div>
+
+          {/* Card 2: Class 02 */}
+          <div className="bg-[#242424] border border-[#383838] hover:border-amber-500/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Class 02</span>
+              <div className="p-2 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-400">
+                <Building2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="text-2xl font-black text-[#F5F5F5] font-mono">{getClassCount('02')}</div>
+              <div className="text-xs font-semibold text-slate-300 truncate">Industrial / Emergency</div>
+            </div>
+          </div>
+
+          {/* Card 3: Class 03 */}
+          <div className="bg-[#242424] border border-[#383838] hover:border-emerald-500/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Class 03</span>
+              <div className="p-2 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-400">
+                <Trees className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="text-2xl font-black text-[#F5F5F5] font-mono">{getClassCount('03')}</div>
+              <div className="text-xs font-semibold text-slate-300 truncate">Forest / Wildfire</div>
+            </div>
+          </div>
+
+          {/* Card 4: Class 04 */}
+          <div className="bg-[#242424] border border-[#383838] hover:border-amber-500/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Class 04</span>
+              <div className="p-2 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-400">
+                <Tractor className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="text-2xl font-black text-[#F5F5F5] font-mono">{getClassCount('04')}</div>
+              <div className="text-xs font-semibold text-slate-300 truncate">Agricultural / Stubble</div>
+            </div>
+          </div>
+
+          {/* Card 5: Class 05 */}
+          <div className="bg-[#242424] border border-[#383838] hover:border-cyan-500/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Class 05</span>
+              <div className="p-2 bg-cyan-500/15 border border-cyan-500/30 rounded-xl text-cyan-400">
+                <FlaskConical className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="text-2xl font-black text-[#F5F5F5] font-mono">{getClassCount('05')}</div>
+              <div className="text-xs font-semibold text-slate-300 truncate">Mining / Coalfield</div>
+            </div>
+          </div>
+
+          {/* Card 6: Class 06 */}
+          <div className="bg-[#242424] border border-[#383838] hover:border-orange-500/40 rounded-2xl p-4 shadow-xl flex flex-col justify-between transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Class 06</span>
+              <div className="p-2 bg-orange-500/15 border border-orange-500/30 rounded-xl text-orange-400">
+                <Building2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="text-2xl font-black text-[#F5F5F5] font-mono">{getClassCount('06')}</div>
+              <div className="text-xs font-semibold text-slate-300 truncate">Urban / Landfill</div>
+            </div>
+          </div>
+
+        </div>
       </div>
 
     </div>
