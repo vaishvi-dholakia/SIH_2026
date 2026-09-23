@@ -61,12 +61,6 @@ While NASA FIRMS (VIIRS 375m & MODIS 1km) provides reliable global thermal anoma
 
 ## 3. Proposed Solution: GEO-SCD Operational Architecture
 
-<p align="center">
-  <img src="./assets/geo-scd-ppt-flowchart.png" alt="GEO-SCD System Architecture & Technical Flowchart" width="100%" />
-  <br>
-  <em>Figure 1: GEO-SCD End-to-End Technical Architecture & 6-Class Operational Flowchart</em>
-</p>
-
 ```text
                      [ STEP 1: MULTI-SENSOR TELEMETRY INGESTION ]
      ┌───────────────────────────┼───────────────────────────┐
