@@ -8,6 +8,42 @@ logger = logging.getLogger("geoscd.database")
 
 Base = declarative_base()
 
+def ensure_postgres_db_exists(postgres_url: str):
+    """
+    Checks if the target PostgreSQL database exists.
+    If PostgreSQL server is reachable but the target database is missing,
+    automatically creates the target database in PostgreSQL server.
+    """
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(postgres_url)
+        db_name = parsed.path.lstrip('/')
+        if not db_name or db_name == 'postgres':
+            return
+        
+        # Construct URL connecting to default 'postgres' database
+        admin_url = postgres_url.rsplit('/', 1)[0] + '/postgres'
+        
+        admin_engine = create_engine(
+            admin_url,
+            connect_args={"connect_timeout": 3},
+            isolation_level="AUTOCOMMIT"
+        )
+        
+        with admin_engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :dbname"),
+                {"dbname": db_name}
+            )
+            exists = result.scalar() is not None
+            if not exists:
+                logger.info(f"Database '{db_name}' does not exist on PostgreSQL server. Automatically creating database...")
+                conn.execute(text(f'CREATE DATABASE "{db_name}";'))
+                logger.info(f"Successfully created database '{db_name}' on PostgreSQL server!")
+        admin_engine.dispose()
+    except Exception as e:
+        logger.warning(f"Note during auto-creation check for PostgreSQL database: {e}")
+
 def get_engine_and_session():
     primary_url = settings.DATABASE_URL
     is_postgres = primary_url.startswith("postgresql")
@@ -20,6 +56,9 @@ def get_engine_and_session():
     if is_postgres:
         try:
             logger.info("Attempting connection to primary PostgreSQL database...")
+            # Auto-create database on PostgreSQL server if it doesn't exist yet
+            ensure_postgres_db_exists(primary_url)
+
             test_engine = create_engine(
                 primary_url,
                 connect_args={"connect_timeout": 3},
