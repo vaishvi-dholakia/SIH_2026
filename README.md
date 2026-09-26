@@ -61,12 +61,6 @@ While NASA FIRMS (VIIRS 375m & MODIS 1km) provides reliable global thermal anoma
 
 ## 3. Proposed Solution: GEO-SCD Operational Architecture
 
-<p align="center">
-  <img src="./assets/geo-scd-ppt-flowchart.png" alt="GEO-SCD System Architecture & Technical Flowchart" width="100%" />
-  <br>
-  <em>Figure 1: GEO-SCD End-to-End Technical Architecture & 6-Class Operational Flowchart</em>
-</p>
-
 ```text
                      [ STEP 1: MULTI-SENSOR TELEMETRY INGESTION ]
      ┌───────────────────────────┼───────────────────────────┐
@@ -235,7 +229,7 @@ The 0–100 Priority Threat Score adapts dynamically based on location context:
 
 * **Mode A: Natural / Biomass / Urban Fires (Classes 03, 04, 05, 06)**  
   $$\text{Score} = (0.35 \times \text{FRP Norm}) + (0.25 \times \text{Anomaly Score}) + (0.25 \times \text{Population Risk}) + (0.15 \times \text{Dryness Risk})$$  
-  *Where **Dryness Risk** = 100 − Relative Humidity (%).*
+  *Where $\text{Dryness Risk} = 100 - \text{Relative Humidity \%}$.*
 
 * **Mode B: Industrial Incidents (Class 02)**  
   $$\text{Score} = \min\left(100, (0.40 \times \text{FRP Ratio Norm}) + (0.30 \times \text{Anomaly Score}) + (0.30 \times \text{Refinery Proximity Score})\right)$$
