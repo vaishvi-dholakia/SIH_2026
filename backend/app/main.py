@@ -144,6 +144,8 @@ async def periodic_firms_ingestion():
 async def lifespan(app: FastAPI):
     # Startup: initialize tables and launch background data sync tasks
     logger.info("Initializing GEO-SCD Backend Engine...")
+    from app.database import engine
+    logger.info(f"[DATABASE CHECK] Connected Database Engine: {engine.name.upper()} ({engine.url})")
     init_db()
 
     # Startup Diagnostic Check for Sentinel Hub Authentication
