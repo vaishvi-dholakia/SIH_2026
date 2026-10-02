@@ -168,7 +168,8 @@ class FIRMSFetcher:
         cls,
         raw: Dict[str, Any],
         db: Session,
-        ws_broadcast_callback=None
+        ws_broadcast_callback=None,
+        geofence_cache: Optional[Dict[str, Any]] = None
     ) -> Optional[ActiveHotspot]:
         """
         Executes the mandatory 5-step conditional ingestion sequence:
@@ -188,7 +189,6 @@ class FIRMSFetcher:
 
         from app.services.india_boundary import is_point_in_india
         if not is_point_in_india(lat, lon):
-            logger.info(f"Skipping hotspot at ({lat}, {lon}) - outside Indian sovereign territory.")
             return None
 
         brightness = raw["brightness"]
@@ -198,7 +198,7 @@ class FIRMSFetcher:
         detected_at = raw["detected_at"]
 
         # Step 1: Spatial Analysis
-        spatial_res = SpatialAnalyser.analyse_point(lat, lon, db)
+        spatial_res = SpatialAnalyser.analyse_point(lat, lon, db, geofence_cache=geofence_cache)
 
         # Step 2 & 3: Pre-Routing Decision based on NASA FIRMS type
         ndvi = None
@@ -240,10 +240,16 @@ class FIRMSFetcher:
             model_conf = 0.95
             anomaly_score = min(1.0, frp_ratio / 3.0) if frp_ratio > 1.0 else 0.1
         
-        elif firms_type == 0:
-            # Presumed Vegetation -> Route to Vegetation Engine (OSM + Sentinel-2 NDVI)
-            from app.services.vegetation_engine import VegetationEngine
-            classification_class, classification, ndvi = await VegetationEngine.process_vegetation_hotspot(lat, lon, frp)
+            classification_class, classification, ndvi = await VegetationEngine.process_vegetation_hotspot(
+                lat=lat,
+                lon=lon,
+                frp=frp,
+                distance_to_forest_m=spatial_res.distance_to_forest_m,
+                distance_to_farmland_m=spatial_res.distance_to_farmland_m,
+                distance_to_mining_m=spatial_res.distance_to_mining_m,
+                distance_to_landfill_m=spatial_res.distance_to_landfill_m,
+                fast_mode=True
+            )
             is_suppressed = False
             is_critical_alarm = (frp > 100.0)
             ndvi_pending = (ndvi is None)
@@ -321,6 +327,17 @@ class FIRMSFetcher:
 
         satellite_sensor = raw.get("satellite_sensor", "VIIRS (Suomi-NPP 375m)")
 
+        # Validate nearest_refinery_id against DB FK constraints
+        refinery_id = spatial_res.nearest_refinery_id
+        if refinery_id is not None:
+            if geofence_cache is not None and "valid_refinery_ids" in geofence_cache:
+                if refinery_id not in geofence_cache["valid_refinery_ids"]:
+                    refinery_id = None
+            else:
+                from app.models.refinery import Refinery
+                if not db.query(Refinery.id).filter(Refinery.id == refinery_id).first():
+                    refinery_id = None
+
         if existing:
             hotspot = existing
             hotspot.brightness = brightness
@@ -344,7 +361,7 @@ class FIRMSFetcher:
             hotspot.classification = classification
             hotspot.model_confidence = model_conf
             hotspot.is_suppressed = is_suppressed
-            hotspot.nearest_refinery_id = spatial_res.nearest_refinery_id
+            hotspot.nearest_refinery_id = refinery_id
         else:
             hotspot = ActiveHotspot(
                 latitude=lat,
@@ -371,12 +388,17 @@ class FIRMSFetcher:
                 model_confidence=model_conf,
                 is_suppressed=is_suppressed,
                 status="new",
-                nearest_refinery_id=spatial_res.nearest_refinery_id
+                nearest_refinery_id=refinery_id
             )
             db.add(hotspot)
 
-        db.commit()
-        db.refresh(hotspot)
+        try:
+            db.commit()
+            db.refresh(hotspot)
+        except Exception as commit_err:
+            db.rollback()
+            logger.error(f"Error committing hotspot record ({lat}, {lon}): {commit_err}")
+            return None
 
         # Auto-update SuppressionHistory baseline for nearest refinery if within 10km
         if spatial_res.nearest_refinery_id and spatial_res.distance_to_refinery_m <= 10000.0:
@@ -425,17 +447,21 @@ class FIRMSFetcher:
         return hotspot
 
     @classmethod
-    async def run_live_ingestion_cycle(cls, db: Session, ws_broadcast_callback=None) -> int:
+    async def run_live_ingestion_cycle(cls, db: Session, ws_broadcast_callback=None, max_limit: int = 10000) -> int:
         """Scheduled / On-Demand active ingestion routine."""
         import asyncio
         raw_fires = await cls.fetch_firms_data(day_range=1)
-        # Sort by Fire Radiative Power (FRP) and process top 50 most critical detections per cycle
-        top_fires = sorted(raw_fires, key=lambda x: x.get('frp', 0.0), reverse=True)[:50]
+        # Process all authentic FIRMS detections (sorted by FRP) up to max_limit
+        sorted_fires = sorted(raw_fires, key=lambda x: x.get('frp', 0.0), reverse=True)[:max_limit]
+        
+        # Pre-cache geofences to make batch ingestion blazing fast
+        geofence_cache = SpatialAnalyser.get_cached_geofences(db)
         count = 0
-        for raw in top_fires:
-            res = await cls.process_and_ingest_hotspot(raw, db, ws_broadcast_callback)
+        for i, raw in enumerate(sorted_fires):
+            res = await cls.process_and_ingest_hotspot(raw, db, ws_broadcast_callback, geofence_cache=geofence_cache)
             if res:
                 count += 1
-            await asyncio.sleep(0.01) # Yield event loop so FastAPI handles incoming API requests instantly
-        logger.info(f"Ingestion cycle completed. Processed {count} high-priority hotspots.")
+            if i % 100 == 0:
+                await asyncio.sleep(0.001) # Yield event loop periodically so FastAPI handles API requests
+        logger.info(f"Ingestion cycle completed. Processed {count} hotspots (out of {len(sorted_fires)} detections).")
         return count

@@ -99,7 +99,46 @@ class SpatialAnalyser:
                 return 999999.0
 
     @classmethod
-    def analyse_point(cls, lat: float, lon: float, db: Session) -> SpatialResult:
+    def get_cached_geofences(cls, db: Session) -> Dict[str, Any]:
+        """Pre-loads and parses WKT geometries into memory as plain Python dicts for ultra-fast, thread-safe batch processing."""
+        refineries = []
+        valid_refinery_ids = set()
+        for ref in db.query(Refinery).all():
+            wkt_poly = cls.parse_wkt_safe(ref.geometry)
+            if wkt_poly:
+                refineries.append({
+                    "id": ref.id,
+                    "name": ref.name,
+                    "safety_buffer_km": ref.safety_buffer_km or 1.0,
+                    "poly": wkt_poly
+                })
+                valid_refinery_ids.add(ref.id)
+
+        def load_parsed(model_cls):
+            geoms = []
+            for rec in db.query(model_cls).all():
+                g = cls.parse_wkt_safe(rec.geometry)
+                if g: geoms.append(g)
+            return geoms
+
+        return {
+            "refineries": refineries,
+            "valid_refinery_ids": valid_refinery_ids,
+            "population_centers": load_parsed(PopulationCenter),
+            "forests": load_parsed(Forest),
+            "farmlands": load_parsed(Farmland),
+            "mines": load_parsed(Mine),
+            "landfills": load_parsed(Landfill),
+        }
+
+    @classmethod
+    def analyse_point(
+        cls,
+        lat: float,
+        lon: float,
+        db: Session,
+        geofence_cache: Optional[Dict[str, Any]] = None
+    ) -> SpatialResult:
         """
         Evaluates a thermal anomaly coordinate against:
         1. All registered Refinery geofences (inside polygon check, safety buffer, nearest distance)
@@ -108,12 +147,29 @@ class SpatialAnalyser:
         """
         pt = Point(lon, lat)
 
-        refineries = db.query(Refinery).all()
-        population_centers = db.query(PopulationCenter).all()
-        forests = db.query(Forest).all()
-        farmlands = db.query(Farmland).all()
-        mines = db.query(Mine).all()
-        landfills = db.query(Landfill).all()
+        if geofence_cache is not None:
+            refineries_with_poly = geofence_cache["refineries"]
+            population_centers = geofence_cache["population_centers"]
+            forests = geofence_cache["forests"]
+            farmlands = geofence_cache["farmlands"]
+            mines = geofence_cache["mines"]
+            landfills = geofence_cache["landfills"]
+        else:
+            refineries_with_poly = []
+            for ref in db.query(Refinery).all():
+                p = cls.parse_wkt_safe(ref.geometry)
+                if p:
+                    refineries_with_poly.append({
+                        "id": ref.id,
+                        "name": ref.name,
+                        "safety_buffer_km": ref.safety_buffer_km or 1.0,
+                        "poly": p
+                    })
+            population_centers = [cls.parse_wkt_safe(rec.geometry) for rec in db.query(PopulationCenter).all() if rec.geometry]
+            forests = [cls.parse_wkt_safe(rec.geometry) for rec in db.query(Forest).all() if rec.geometry]
+            farmlands = [cls.parse_wkt_safe(rec.geometry) for rec in db.query(Farmland).all() if rec.geometry]
+            mines = [cls.parse_wkt_safe(rec.geometry) for rec in db.query(Mine).all() if rec.geometry]
+            landfills = [cls.parse_wkt_safe(rec.geometry) for rec in db.query(Landfill).all() if rec.geometry]
 
         is_inside_refinery = False
         is_within_safety_buffer = False
@@ -121,8 +177,12 @@ class SpatialAnalyser:
         nearest_refinery_name = None
         min_refinery_dist = 999999.0
 
-        for ref in refineries:
-            poly = cls.parse_wkt_safe(ref.geometry)
+        for item in refineries_with_poly:
+            poly = item["poly"]
+            ref_id = item["id"]
+            ref_name = item["name"]
+            buffer_km = item["safety_buffer_km"]
+
             if not poly:
                 continue
 
@@ -132,23 +192,22 @@ class SpatialAnalyser:
                 is_inside_refinery = True
                 is_within_safety_buffer = True
                 min_refinery_dist = 0.0
-                nearest_refinery_id = ref.id
-                nearest_refinery_name = ref.name
+                nearest_refinery_id = ref_id
+                nearest_refinery_name = ref_name
                 break  # Point is directly inside this refinery
             else:
-                buffer_m = (ref.safety_buffer_km or 1.0) * 1000.0
+                buffer_m = buffer_km * 1000.0
                 if dist_m <= buffer_m:
                     is_within_safety_buffer = True
 
                 if dist_m < min_refinery_dist:
                     min_refinery_dist = dist_m
-                    nearest_refinery_id = ref.id
-                    nearest_refinery_name = ref.name
+                    nearest_refinery_id = ref_id
+                    nearest_refinery_name = ref_name
 
-        def get_min_dist(records):
+        def get_min_dist(geoms):
             min_dist = 999999.0
-            for rec in records:
-                geom = cls.parse_wkt_safe(rec.geometry)
+            for geom in geoms:
                 if not geom: continue
                 d = cls.calculate_metric_distance(pt, geom)
                 if d < min_dist: min_dist = d

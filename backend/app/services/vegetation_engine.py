@@ -20,13 +20,31 @@ class VegetationEngine:
         cls,
         lat: float,
         lon: float,
-        frp: float
+        frp: float,
+        distance_to_forest_m: float = 999999.0,
+        distance_to_farmland_m: float = 999999.0,
+        distance_to_mining_m: float = 999999.0,
+        distance_to_landfill_m: float = 999999.0,
+        fast_mode: bool = True
     ) -> Tuple[str, str, Optional[float]]:
         """
-        Processes a Type 0 hotspot.
+        Processes a Type 0 hotspot with optional fast_mode (uses local spatial geofence distances).
+        When fast_mode=True, avoids synchronous HTTP requests to Copernicus during batch ingestion.
         Returns:
             (classification_class, classification_label, ndvi_value)
         """
+        if fast_mode:
+            if distance_to_forest_m <= 3000.0:
+                return "03", "Forest Fire / Wildfire", None
+            elif distance_to_farmland_m <= 3000.0:
+                return "04", "Agricultural / Stubble Burning", None
+            elif distance_to_mining_m <= 3000.0:
+                return "05", "Mining Area / Coal Mine Fire", 0.05
+            elif distance_to_landfill_m <= 3000.0:
+                return "06", "Urban / Landfill Fire", 0.02
+            else:
+                return "03", "Forest Fire / Wildfire", None
+
         try:
             # 1. Query OpenStreetMap for landcover classification at coordinate
             osm_landcover = OSMFetcher.query_osm_landcover(lat, lon)
@@ -41,8 +59,7 @@ class VegetationEngine:
             elif ndvi_val is not None:
                 return "04", "Agricultural / Stubble Burning", ndvi_val
             else:
-                # Default Forest Fire if NDVI pending
-                return "03", "Forest Fire / Wildfire", 0.50
+                return "03", "Forest Fire / Wildfire", None
 
         elif osm_landcover == "farmland":
             ndvi_val = await SentinelNDVIService.fetch_sentinel2_ndvi(lat, lon)
@@ -51,7 +68,7 @@ class VegetationEngine:
             elif ndvi_val is not None and ndvi_val > 0.35:
                 return "03", "Forest Fire / Wildfire", ndvi_val
             else:
-                return "04", "Agricultural / Stubble Burning", 0.25
+                return "04", "Agricultural / Stubble Burning", None
 
         elif osm_landcover == "mine":
             return "05", "Mining Area / Coal Mine Fire", 0.05
@@ -60,11 +77,10 @@ class VegetationEngine:
             return "06", "Urban / Landfill Fire", 0.02
 
         else:
-            # Default Vegetation Fallback
             ndvi_val = await SentinelNDVIService.fetch_sentinel2_ndvi(lat, lon)
             if ndvi_val is not None:
                 if ndvi_val > 0.40:
                     return "03", "Forest Fire / Wildfire", ndvi_val
                 else:
                     return "04", "Agricultural / Stubble Burning", ndvi_val
-            return "03", "Forest Fire / Wildfire", 0.50
+            return "03", "Forest Fire / Wildfire", None

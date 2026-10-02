@@ -16,8 +16,8 @@ class SuppressionEngine:
     Distinguishes continuous industrial chimney flaring from genuine disasters.
     """
 
-    # Spatial cluster tolerance in degrees (~500 meters)
-    COORD_TOLERANCE_DEG = 0.005  
+    # Spatial cluster tolerance in degrees (~1.5 km) to absorb satellite geolocation jitter (±375m - 1000m)
+    COORD_TOLERANCE_DEG = 0.015  
 
     @classmethod
     def evaluate(

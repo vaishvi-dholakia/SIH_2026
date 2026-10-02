@@ -403,14 +403,28 @@ async def simulate_hotspot(
         "message": f"SIMULATED BURST: {classification} detected! FRP: {frp} MW (Score: {priority_score}/100)"
     })
 
+@router.post("/sync")
+async def trigger_firms_sync(
+    limit: int = Query(10000, ge=1, le=50000, description="Max FIRMS detections to ingest"),
+    db: Session = Depends(get_db)
+):
+    """
+    Triggers an immediate live ingestion cycle from NASA FIRMS.
+    Processes authentic satellite detections across India without artificial caps.
+    """
+    from app.services.firms_fetcher import FIRMSFetcher
+    from app.routers.websockets import ws_manager
+
+    processed = await FIRMSFetcher.run_live_ingestion_cycle(
+        db,
+        ws_broadcast_callback=ws_manager.broadcast,
+        max_limit=limit
+    )
     return {
-        "id": new_sim.id,
-        "latitude": new_sim.latitude,
-        "longitude": new_sim.longitude,
-        "classification": new_sim.classification,
-        "priority_score": new_sim.priority_score,
-        "data_source": "SIMULATION",
-        "status": "simulated"
+        "status": "success",
+        "processed": processed,
+        "message": f"Successfully ingested {processed} authentic NASA FIRMS detections."
     }
+
 
 

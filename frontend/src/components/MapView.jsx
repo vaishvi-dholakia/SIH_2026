@@ -185,7 +185,21 @@ function MapViewInner({
     return coords.length > 0;
   });
 
-  const displayIncidents = validIndianIncidents;
+  const displayIncidents = useMemo(() => {
+    if (!validIndianIncidents.length) return [];
+    
+    // Sort critical / high priority incidents first
+    const sorted = [...validIndianIncidents].sort((a, b) => {
+      const pMap = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+      const pA = pMap[a.priority] || 1;
+      const pB = pMap[b.priority] || 1;
+      if (pA !== pB) return pB - pA;
+      return (parseFloat(b.frp) || 0) - (parseFloat(a.frp) || 0);
+    });
+
+    // Cap visible rendered map markers to 800 highest priority events for buttery smooth 60 FPS map performance
+    return sorted.slice(0, 800);
+  }, [safeIncidents]);
 
   // Safe default center
   let defaultCenter = INDIA_CENTER;

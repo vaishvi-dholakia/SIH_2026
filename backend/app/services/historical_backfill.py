@@ -39,8 +39,8 @@ class HistoricalBackfillService:
                 bbox_str = f"{int(BBOX_WEST)},{int(BBOX_SOUTH)},{int(BBOX_EAST)},{int(BBOX_NORTH)}"
                 target_days = min(days, 30)
                 today = datetime.now(timezone.utc).date()
-                # Iterate every single consecutive calendar day (1-day step) from NASA Keyed API
-                for day_offset in range(0, target_days, 1):
+                # Iterate in 5-day steps from NASA Keyed Area API
+                for day_offset in range(0, target_days, 5):
                     chunk_date = today - timedelta(days=day_offset)
                     date_str = chunk_date.strftime("%Y-%m-%d")
                     for src in ["VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT"]:
@@ -86,7 +86,7 @@ class HistoricalBackfillService:
         return sorted_records
 
     @classmethod
-    async def run_backfill(cls, db: Session, limit: int = 500) -> Dict[str, Any]:
+    async def run_backfill(cls, db: Session, limit: int = 10000) -> Dict[str, Any]:
         """
         Runs historical detections chronologically through the full pipeline:
         Spatial Analysis -> Suppression -> Conditional NDVI -> Dual ML -> Upsert
@@ -98,14 +98,19 @@ class HistoricalBackfillService:
             logger.warning("No historical records downloaded from NASA FIRMS.")
             return {"status": "error", "message": "No data retrieved from NASA FIRMS", "processed": 0}
 
-        # Take up to limit records for demo stability
-        selected_records = records[:limit]
+        # Take up to limit records
+        selected_records = records[:limit] if limit else records
         processed_count = 0
 
-        for r in selected_records:
+        from app.services.spatial_analyser import SpatialAnalyser
+        geofence_cache = SpatialAnalyser.get_cached_geofences(db)
+
+        for i, r in enumerate(selected_records):
             try:
-                await FIRMSFetcher.process_and_ingest_hotspot(r, db, ws_broadcast_callback=None)
+                await FIRMSFetcher.process_and_ingest_hotspot(r, db, ws_broadcast_callback=None, geofence_cache=geofence_cache)
                 processed_count += 1
+                if i % 100 == 0:
+                    await asyncio.sleep(0.001)
             except Exception as e:
                 logger.error(f"Error processing record: {e}")
 

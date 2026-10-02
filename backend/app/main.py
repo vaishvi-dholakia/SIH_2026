@@ -77,10 +77,21 @@ async def ensure_live_osm_data():
             await OSMFetcher.sync_all_from_osm(db)
 
         hotspot_count = db.query(ActiveHotspot).count()
-        if hotspot_count == 0:
-            logger.info("No hotspots in database. Ingesting initial thermal detections...")
+        latest_record = db.query(ActiveHotspot).order_by(ActiveHotspot.detected_at.desc()).first()
+        is_stale = False
+        if latest_record and latest_record.detected_at:
+            from datetime import timedelta
+            rec_dt = latest_record.detected_at
+            if rec_dt.tzinfo is None:
+                rec_dt = rec_dt.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - rec_dt
+            if age > timedelta(hours=24):
+                is_stale = True
+
+        if hotspot_count == 0 or is_stale:
+            logger.info("Ingesting/updating past 30-day thermal detections from NASA FIRMS archive...")
             from app.services.historical_backfill import HistoricalBackfillService
-            await HistoricalBackfillService.run_backfill(db, limit=500)
+            await HistoricalBackfillService.run_backfill(db, limit=15000)
 
             # If NASA open feed returned no current fires, seed initial representative hotspots across India
             if db.query(ActiveHotspot).count() == 0:
