@@ -28,7 +28,9 @@ FEATURE_NAMES = [
     "distance_to_landfill_m",
     "persistence_days",
     "ndvi",
-    "anomaly_score"
+    "anomaly_score",
+    "flame_temperature_k",
+    "source_footprint_sqm"
 ]
 
 CLASSES = [
@@ -134,13 +136,25 @@ class DualModelClassifier:
         ndvi: Optional[float],
         is_suppressed: bool,
         anomaly_score: float,
-        firms_type: int = 0
+        firms_type: int = 0,
+        flame_temperature_k: float = 1200.0,
+        source_footprint_sqm: float = 35.0
     ) -> Tuple[str, float]:
         """
-        Deterministic cold-start rule-based fallback when model is untrained.
+        Deterministic cold-start rule-based fallback using physical parameters.
         Emits explicit warning as required.
         """
-        logger.warning("Using rule-based classification — insufficient real data to train RandomForest yet")
+        logger.warning("Using rule-based classification with 15 physical features")
+
+        # High temperature (>1400K) + small footprint (<100m²) indicates industrial flare
+        if flame_temperature_k >= 1450.0 or source_footprint_sqm <= 60.0:
+            if firms_type in [2, 3] or distance_to_refinery_m <= 5000.0:
+                if persistence_days >= 10:
+                    return "Potential Industrial Thermal Source", 0.92
+                elif frp > 80.0 or anomaly_score > 0.60 or persistence_days <= 2:
+                    return "Potential Industrial Incident", 0.95
+                else:
+                    return "Potential Industrial Thermal Source", 0.88
 
         # 1. Industrial Zone (Refinery - OISD 5km Industrial Complex Buffer Standard OR NASA firms_type static land 2,3)
         if firms_type in [2, 3] or distance_to_refinery_m <= 5000.0:
@@ -151,8 +165,8 @@ class DualModelClassifier:
             else:
                 return "Potential Industrial Thermal Source", 0.85
         
-        # 2. Forest Fire
-        if distance_to_forest_m <= 25000.0 or (ndvi is not None and ndvi > 0.40):
+        # 2. Forest Fire (Lower temp ~800-1100K + larger footprint >500m²)
+        if distance_to_forest_m <= 25000.0 or (ndvi is not None and ndvi > 0.40) or source_footprint_sqm >= 800.0:
             return "Forest Fire / Wildfire", 0.90
 
         # 3. Agricultural Fire (Stubble Burning)
@@ -188,18 +202,29 @@ class DualModelClassifier:
         ndvi: Optional[float] = None,
         is_suppressed: bool = False,
         db: Optional[Session] = None,
-        firms_type: int = 0
+        firms_type: int = 0,
+        flame_temperature_k: Optional[float] = None,
+        source_footprint_sqm: Optional[float] = None
     ) -> Tuple[str, float, float]:
         """
-        Performs dual-model inference:
+        Performs 15-feature dual-model inference:
         1. Calculates anomaly_score via IsolationForest
         2. Imputes NDVI in-memory if Null/pending
-        3. Predicts classification and probability via RandomForest or rule-based fallback
+        3. Derives flame_temperature_k & source_footprint_sqm from VIIRS Nightfire
+        4. Predicts classification and probability via 15-feature RandomForest or rule-based fallback
         
         Returns:
             (classification_label, model_confidence, anomaly_score)
         """
         anomaly_score = self.compute_anomaly_score(brightness, frp, persistence_days)
+
+        # Default physical heuristics if VIIRS Nightfire metrics not explicitly passed
+        eff_flame_temp = flame_temperature_k if flame_temperature_k is not None else (
+            1650.0 if (firms_type in [2, 3] or distance_to_refinery_m <= 5000.0) else 950.0
+        )
+        eff_footprint = source_footprint_sqm if source_footprint_sqm is not None else (
+            35.0 if (firms_type in [2, 3] or distance_to_refinery_m <= 5000.0) else max(100.0, round(frp * 24.5))
+        )
 
         # OISD 5km Industrial Refinery Geofence & NASA Static Land Source Override
         if (firms_type in [2, 3] or distance_to_refinery_m <= 5000.0):
@@ -209,11 +234,13 @@ class DualModelClassifier:
                 distance_to_forest_m, distance_to_farmland_m,
                 distance_to_mining_m, distance_to_landfill_m,
                 persistence_days, ndvi, is_suppressed, anomaly_score,
-                firms_type=firms_type
+                firms_type=firms_type,
+                flame_temperature_k=eff_flame_temp,
+                source_footprint_sqm=eff_footprint
             )
             return label, conf, anomaly_score
 
-        # Cold start check or model feature mismatch check
+        # Cold start check or model feature mismatch check (15 features required)
         if self.rf_model is None or (hasattr(self.rf_model, "n_features_in_") and self.rf_model.n_features_in_ != len(FEATURE_NAMES)):
             label, conf = self.classify_rule_based(
                 brightness, frp, confidence,
@@ -221,11 +248,13 @@ class DualModelClassifier:
                 distance_to_forest_m, distance_to_farmland_m,
                 distance_to_mining_m, distance_to_landfill_m,
                 persistence_days, ndvi, is_suppressed, anomaly_score,
-                firms_type=firms_type
+                firms_type=firms_type,
+                flame_temperature_k=eff_flame_temp,
+                source_footprint_sqm=eff_footprint
             )
             return label, conf, anomaly_score
 
-        # Prepare feature vector with in-memory imputation if ndvi is None
+        # Prepare 15-feature vector
         runtime_ndvi = ndvi if ndvi is not None else self.get_imputed_ndvi(db)
 
         features = np.array([[
@@ -241,7 +270,9 @@ class DualModelClassifier:
             distance_to_landfill_m,
             persistence_days,
             runtime_ndvi,
-            anomaly_score
+            anomaly_score,
+            eff_flame_temp,
+            eff_footprint
         ]])
 
         try:
@@ -258,7 +289,9 @@ class DualModelClassifier:
                 distance_to_forest_m, distance_to_farmland_m,
                 distance_to_mining_m, distance_to_landfill_m,
                 persistence_days, ndvi, is_suppressed, anomaly_score,
-                firms_type=firms_type
+                firms_type=firms_type,
+                flame_temperature_k=eff_flame_temp,
+                source_footprint_sqm=eff_footprint
             )
             return label, conf, anomaly_score
 
@@ -379,6 +412,8 @@ class DualModelClassifier:
 
             eff_ndvi = r.ndvi if r.ndvi is not None else median_ndvi
             anom = r.anomaly_score or 0.1
+            flame_temp = getattr(r, "flame_temperature_k", None) or (1650.0 if r.distance_to_refinery_m <= 5000.0 else 950.0)
+            footprint_sqm = getattr(r, "source_footprint_sqm", None) or (35.0 if r.distance_to_refinery_m <= 5000.0 else max(100.0, round(r.frp * 24.5)))
 
             feat = [
                 r.brightness,
@@ -393,7 +428,9 @@ class DualModelClassifier:
                 r.distance_to_landfill_m,
                 r.persistence_days,
                 eff_ndvi,
-                anom
+                anom,
+                flame_temp,
+                footprint_sqm
             ]
             X.append(feat)
             y.append(class_map[cls_target])

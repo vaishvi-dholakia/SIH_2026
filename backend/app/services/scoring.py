@@ -100,18 +100,33 @@ def calculate_priority_threat_score(
     frp: float,
     anomaly_score: float,
     pop_proximity_km: float,
-    facility_dist_km: float
+    facility_dist_km: float,
+    relative_humidity: float = 50.0,
+    classification_class: str = "01"
 ) -> int:
     """
-    Calculates a normalized 0 to 100 Priority Threat Score per Module 5 Master Prompt.
-    Formula:
-    Threat Score = (FRP_norm * 0.40) + (Anomaly_norm * 0.25) + (PopProximity_norm * 0.20) + (FacilityDist_norm * 0.15)
-    """
-    frp_norm = min(frp / 500.0, 1.0) * 100.0
-    anomaly_norm = max(0.0, (1.0 - anomaly_score) / 2.0) * 100.0
-    pop_norm = max(0.0, (10.0 - pop_proximity_km) / 10.0) * 100.0
-    dist_norm = max(0.0, (5.0 - facility_dist_km) / 5.0) * 100.0
+    Calculates a normalized 0 to 100 Priority Threat Score per GEO-SCD Specification:
+    
+    For Classes 03–06 (Natural, Stubble, Mining, Urban):
+        Threat Score = (FRP * 35%) + (Anomaly * 20%) + (Population Risk * 20%) + (Facility Dist * 10%) + (Humidity Risk * 15%)
+        where Humidity Risk = 100 - Relative Humidity %
 
-    score = (frp_norm * 0.40) + (anomaly_norm * 0.25) + (pop_norm * 0.20) + (dist_norm * 0.15)
+    For Classes 01–02 (Industrial / Refinery):
+        Threat Score = (FRP * 40%) + (Anomaly * 25%) + (Population Risk * 20%) + (Facility Dist * 15%)
+    """
+    frp_norm = min(max(0.0, frp) / 500.0, 1.0) * 100.0
+    anom_norm = max(0.0, min(1.0, float(anomaly_score or 0.0))) * 100.0
+    pop_norm = max(0.0, (10.0 - min(pop_proximity_km, 10.0)) / 10.0) * 100.0
+    dist_norm = max(0.0, (5.0 - min(facility_dist_km, 5.0)) / 5.0) * 100.0
+
+    cls = str(classification_class or "01").strip()
+    if cls in ["03", "04", "05", "06", "Forest Fire / Wildfire", "Agricultural / Stubble Burning", "Mining Area / Coal Mine Fire", "Urban / Landfill Fire"]:
+        humidity_risk = 100.0 - max(0.0, min(100.0, float(relative_humidity or 50.0)))
+        score = (frp_norm * 0.35) + (anom_norm * 0.20) + (pop_norm * 0.20) + (dist_norm * 0.10) + (humidity_risk * 0.15)
+    else:
+        # Classes 01 & 02 (Industrial Flares / Incidents - Humidity not included in scoring)
+        score = (frp_norm * 0.40) + (anom_norm * 0.25) + (pop_norm * 0.20) + (dist_norm * 0.15)
+
     return int(max(0, min(100, round(score))))
+
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea, Legend } from 'recharts';
 import { AlertTriangle, ShieldCheck, CheckCircle2, Eye, Satellite, XCircle } from 'lucide-react';
 import { fetchIncidentHistory, fetchIncidentSatellite } from '../api/client';

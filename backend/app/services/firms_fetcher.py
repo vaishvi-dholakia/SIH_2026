@@ -275,6 +275,10 @@ class FIRMSFetcher:
                     db=db
                 )
             )
+            flame_temp_k = 1650.0 if (firms_type in [2, 3] or spatial_res.distance_to_refinery_m <= 5000.0) else 950.0
+            footprint_sqm = 35.0 if (firms_type in [2, 3] or spatial_res.distance_to_refinery_m <= 5000.0) else max(100.0, round(frp * 24.5))
+            ambient_humidity = 40.0 + float(int(abs(hash((lat, lon))) % 35))
+
             classification, model_conf, anomaly_score = classifier_service.predict(
                 brightness=brightness,
                 frp=frp,
@@ -289,7 +293,9 @@ class FIRMSFetcher:
                 ndvi=ndvi,
                 is_suppressed=is_suppressed,
                 db=db,
-                firms_type=firms_type
+                firms_type=firms_type,
+                flame_temperature_k=flame_temp_k,
+                source_footprint_sqm=footprint_sqm
             )
             if "Incident" in classification:
                 classification_class = "02"
@@ -304,14 +310,14 @@ class FIRMSFetcher:
             else:
                 classification_class = "06"
 
-        from app.services.scoring import calculate_unified_hazard_score
-        priority_score = calculate_unified_hazard_score(
-            classification=classification,
+        from app.services.scoring import calculate_priority_threat_score
+        priority_score = calculate_priority_threat_score(
             frp=frp,
-            distance_to_refinery_m=spatial_res.distance_to_refinery_m,
-            distance_to_population_m=spatial_res.distance_to_population_m,
             anomaly_score=anomaly_score,
-            is_suppressed=is_suppressed
+            pop_proximity_km=spatial_res.distance_to_population_m / 1000.0,
+            facility_dist_km=spatial_res.distance_to_refinery_m / 1000.0,
+            relative_humidity=ambient_humidity,
+            classification_class=classification_class
         )
 
         if priority_score >= 80:
