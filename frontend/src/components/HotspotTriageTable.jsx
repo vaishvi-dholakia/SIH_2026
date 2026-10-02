@@ -231,7 +231,7 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
                           )}
                           {h.detectionCount > 1 && (
                             <span className="ml-1 text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 px-1 py-0.5 rounded shadow-sm inline-flex items-center gap-1">
-                              <span>🛰️ {h.detectionCount} Passes</span>
+                              <span>{h.detectionCount} Passes</span>
                             </span>
                           )}
                         </div>

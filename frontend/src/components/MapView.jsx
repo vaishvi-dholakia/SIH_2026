@@ -535,11 +535,11 @@ function MapViewInner({
                         {inc.locationDisplay || inc.nearestFacility || 'Industrial Zone'}
                       </span>
                       <span className="mt-1 flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded shadow-sm w-fit">
-                        🛰️ {inc.satellite_sensor || inc.satelliteSensor || 'VIIRS (Suomi-NPP 375m)'}
+                        {inc.satellite_sensor || inc.satelliteSensor || 'VIIRS (Suomi-NPP 375m)'}
                       </span>
                       {inc.detectionCount > 1 && (
                         <span className="mt-1 inline-block text-[10px] font-mono font-bold text-cyan-300 bg-cyan-500/20 border border-cyan-500/40 px-2 py-0.5 rounded shadow-sm">
-                          🛰️ Aggregated {inc.detectionCount} Satellite Passes
+                          Aggregated {inc.detectionCount} Satellite Passes
                         </span>
                       )}
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check, Droplets, Ruler } from 'lucide-react';
 import { updateHotspotStatus } from '../api/client';
 
 export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, onViewHistory, onInspectTelemetry, onStatusUpdated }) {
@@ -100,7 +100,7 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
               <div className={`inline-flex items-center gap-2 px-3 py-1 ${theme.badge} border text-xs font-bold rounded-full uppercase tracking-wider`}>
                 <span className={`w-2 h-2 rounded-full ${theme.dot} animate-ping`} />
                 <span>
-                  {isCritical ? '🔴 CRITICAL INCIDENT' : isHigh ? '🟠 HIGH RISK INCIDENT' : isMedium ? '🟡 MEDIUM RISK EVENT' : '🟢 ROUTINE SOURCE'}
+                  {isCritical ? 'CRITICAL INCIDENT' : isHigh ? 'HIGH RISK INCIDENT' : isMedium ? 'MEDIUM RISK EVENT' : 'ROUTINE SOURCE'}
                 </span>
               </div>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
@@ -145,13 +145,15 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#383838]/80 text-left">
               <div className="bg-[#242424] border border-[#383838] px-3.5 py-2 rounded-lg flex items-center justify-between text-xs">
                 <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-                  <span>💧</span> Relative Humidity:
+                  <Droplets className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>Relative Humidity:</span>
                 </span>
                 <span className="font-mono font-black text-blue-400">{humidityVal}%</span>
               </div>
               <div className="bg-[#242424] border border-[#383838] px-3.5 py-2 rounded-lg flex items-center justify-between text-xs">
                 <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-                  <span>📐</span> Emitter Footprint:
+                  <Ruler className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Emitter Footprint:</span>
                 </span>
                 <span className="font-mono font-black text-amber-400">{footprintAreaVal} m²</span>
               </div>

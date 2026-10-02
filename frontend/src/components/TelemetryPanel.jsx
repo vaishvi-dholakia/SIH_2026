@@ -83,43 +83,37 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
     }
   }
 
-  // Badge Category Styling & Icons
+  // Badge Category Styling
   const getBadgeStyle = (classification) => {
     switch (classification) {
       case 'Potential Industrial Incident':
         return {
-          icon: '🔴',
           label: 'Potential Industrial Incident',
           className: 'bg-red-500/20 text-red-400 border border-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.4)] animate-pulse'
         };
       case 'Potential Industrial Thermal Source':
         return {
-          icon: '🟢',
           label: 'Potential Industrial Thermal Source',
           className: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
         };
       case 'Forest Fire / Wildfire':
         return {
-          icon: '🌲',
           label: 'Forest Fire / Wildfire',
           className: 'bg-green-600/20 text-green-400 border border-green-500/50'
         };
       case 'Agricultural / Stubble Burning':
         return {
-          icon: '🌾',
           label: 'Agricultural / Stubble Burning',
           className: 'bg-amber-500/20 text-amber-400 border border-amber-500/50'
         };
       case 'Mining Area / Coal Mine Fire':
         return {
-          icon: '🪨',
           label: 'Mining Area / Coal Mine Fire',
           className: 'bg-purple-500/20 text-purple-300 border border-purple-500/50'
         };
       case 'Urban / Landfill Fire':
       default:
         return {
-          icon: '🏢',
           label: classification || 'Urban / Landfill Fire',
           className: 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
         };
@@ -207,11 +201,11 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
             {geoId}
           </span>
           <span className={`text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5 ${badge.className}`}>
-            <span>{badge.icon}</span>
             <span>{badge.label}</span>
           </span>
           <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold px-2.5 py-1 rounded flex items-center gap-1.5 shadow-sm">
-            🛰️ {h.satelliteSensor || h.satellite_sensor || 'VIIRS (Suomi-NPP 375m)'}
+            <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>{h.satelliteSensor || h.satellite_sensor || 'VIIRS (Suomi-NPP 375m)'}</span>
           </span>
         </div>
 
@@ -219,8 +213,8 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
           onClick={() => onOpenExportPdf && onOpenExportPdf(h)}
           className="bg-[#1D4ED8] hover:bg-blue-600 text-white font-bold text-xs px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer shrink-0"
         >
-          <FileText className="w-4 h-4" />
-          <span>Export Forensic PDF 📄</span>
+          <FileText className="w-4 h-4 shrink-0" />
+          <span>Export Forensic PDF</span>
         </button>
       </div>
 
@@ -235,7 +229,7 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
           </div>
         </div>
         <span className="font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 self-start md:self-auto">
-          📍 {h.landuse || 'Environmental Zone'}
+          {h.landuse || 'Environmental Zone'}
         </span>
       </div>
 
@@ -246,7 +240,7 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
         <div className="bg-[#161616] border border-[#383838] p-3.5 rounded-xl space-y-2.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs border-b border-[#383838]/80 pb-2">
             <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-              <Flame className="w-4 h-4 text-amber-500" />
+              <Flame className="w-4 h-4 text-amber-500 shrink-0" />
               <span>Thermal & Surge Telemetry</span>
             </span>
             <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
@@ -268,17 +262,17 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
           <div className="pt-2 border-t border-[#383838]/60">
             {h.is_suppressed || h.isSuppressed ? (
               <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/40 text-[11px] font-bold px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5">
-                <span>🟢</span>
+                <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
                 <span>Suppressed Operational Chimney Flare</span>
               </div>
             ) : frpRatio >= 3.0 ? (
               <div className="bg-red-500/20 text-red-400 border border-red-500/50 text-[11px] font-black px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.3)]">
-                <span>🚨</span>
+                <Flame className="w-3.5 h-3.5 shrink-0 text-red-400" />
                 <span>3x FRP Surge (Explosion Warning)</span>
               </div>
             ) : (
               <div className="bg-amber-500/15 text-amber-300 border border-amber-500/40 text-[11px] font-bold px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5">
-                <span>🟡</span>
+                <Activity className="w-3.5 h-3.5 shrink-0 text-amber-400" />
                 <span>Active Unsuppressed Thermal Event</span>
               </div>
             )}

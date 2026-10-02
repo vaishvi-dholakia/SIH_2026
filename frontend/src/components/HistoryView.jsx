@@ -143,14 +143,14 @@ export default function HistoryView({ incidents = [] }) {
 
         {/* Temporal Banner */}
         {limitedHistory ? (
-          <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-xl flex items-center justify-between text-xs text-blue-300">
-            <span>ℹ️ Limited historical satellite observations (&lt; 5 passes) available for this coordinate. Baseline initialized from local sensor calibration.</span>
+          <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-xl flex items-center justify-between text-xs text-blue-300 font-medium">
+            <span>Limited historical satellite observations (&lt; 5 passes) available for this coordinate. Baseline initialized from local sensor calibration.</span>
           </div>
         ) : isAbnormal ? (
           <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
-              <AlertTriangle className="w-5 h-5" />
-              <span>⚠️ Abnormal FRP surge detected</span>
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <span>Abnormal FRP surge detected</span>
             </div>
             <span className="text-xs text-slate-400">
               FRP is {activeInc.frpRatio}x historical baseline ({activeInc.frpChangePercent > 0 ? `+${activeInc.frpChangePercent}%` : `${activeInc.frpChangePercent}%`})
@@ -159,8 +159,8 @@ export default function HistoryView({ incidents = [] }) {
         ) : (
           <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl flex items-center justify-between text-xs text-emerald-400 font-bold">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5" />
-              <span>✓ Thermal energy output within expected historical baseline range.</span>
+              <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-400" />
+              <span>Thermal energy output within expected historical baseline range.</span>
             </div>
           </div>
         )}
@@ -176,8 +176,8 @@ export default function HistoryView({ incidents = [] }) {
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
               : 'bg-red-500/10 border-red-500/30 text-red-400'
           }`}>
-            <ShieldCheck className="w-4 h-4" />
-            <span>{activeInc.isSuppressed ? '🟢 ROUTINE SUPPRESSED FLARE' : '🔴 UNSUPPRESSED ACTIVE EVENT'}</span>
+            <ShieldCheck className="w-4 h-4 shrink-0" />
+            <span>{activeInc.isSuppressed ? 'ROUTINE SUPPRESSED FLARE' : 'UNSUPPRESSED ACTIVE EVENT'}</span>
           </div>
 
           <div>
@@ -205,16 +205,16 @@ export default function HistoryView({ incidents = [] }) {
           <div className="bg-[#161616] p-4 rounded-xl border border-[#383838] space-y-2 text-sm font-medium">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Status Audit:</span>
             <div className="flex items-center gap-2 text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-blue-400" />
+              <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
               <span>Priority Tier: <strong className="text-[#F5F5F5]">{activeInc.priority} ({activeInc.hazardScore}/100)</strong></span>
             </div>
             <div className="flex items-center gap-2 text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-blue-400" />
+              <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
               <span>Spatial Proximity: <strong className="text-[#F5F5F5]">{Math.round(activeInc.distanceToRefineryM)}m to registered facility</strong></span>
             </div>
             <div className={`flex items-center gap-2 ${activeInc.isSuppressed ? 'text-emerald-400' : 'text-red-400'}`}>
-              {activeInc.isSuppressed ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-              <span>{activeInc.isSuppressed ? '✓ Alarm suppressed as routine operational flare' : '⚠ Active alarm escalated to Command Deck'}</span>
+              {activeInc.isSuppressed ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+              <span>{activeInc.isSuppressed ? 'Alarm suppressed as routine operational flare' : 'Active alarm escalated to Command Deck'}</span>
             </div>
           </div>
         </div>
@@ -223,16 +223,16 @@ export default function HistoryView({ incidents = [] }) {
         <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-lg flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-slate-300 font-bold text-base border-b border-[#383838] pb-3">
-              <Satellite className="w-5 h-5 text-blue-400" />
+              <Satellite className="w-5 h-5 text-blue-400 shrink-0" />
               <span>SATELLITE MULTISPECTRAL EVIDENCE</span>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-[#161616] rounded-lg border border-[#383838] text-sm">
                 <span className="text-slate-400 font-medium">Sentinel-2 Verification:</span>
-                <span className={`font-bold flex items-center gap-1 ${satelliteData?.sentinel2Available ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {satelliteData?.sentinel2Available ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  <span>{satelliteData?.sentinel2Available ? '✓ Available' : 'Pending Satellite Pass'}</span>
+                <span className={`font-bold flex items-center gap-1.5 ${satelliteData?.sentinel2Available ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {satelliteData?.sentinel2Available ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                  <span>{satelliteData?.sentinel2Available ? 'Available' : 'Pending Satellite Pass'}</span>
                 </span>
               </div>
 
