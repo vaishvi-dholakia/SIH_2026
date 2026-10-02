@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, Component } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, Polygon, Circle, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Eye, AlertCircle, Compass, ShieldCheck, Camera, Ruler, Crosshair, CircleDot } from 'lucide-react';
+import { Eye, AlertCircle, Compass, ShieldCheck, Camera, Ruler, Crosshair, CircleDot, Layers } from 'lucide-react';
 import FilterPanel from './FilterPanel';
 
 // Fix default Leaflet icon paths safely
@@ -616,6 +616,40 @@ function MapViewInner({
             <Camera className="w-3 h-3 text-emerald-400 shrink-0" />
             <span>SNAPSHOT</span>
           </button>
+        </div>
+
+        {/* Tactical Floating Legend Bar (Option 1 - Bottom Right) */}
+        <div className="absolute bottom-3 right-3 z-[400] bg-[#121620]/95 border border-slate-700/80 rounded-xl px-3 py-1.5 backdrop-blur-md shadow-2xl flex items-center gap-3 text-xs font-bold text-slate-200 pointer-events-auto">
+          <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider pr-2.5 border-r border-slate-700/80 flex items-center gap-1">
+            <Layers className="w-3 h-3 text-blue-400 shrink-0" />
+            <span>Legend</span>
+          </span>
+          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+            <span className="flex items-center gap-1.5 text-red-400 hover:scale-105 transition-transform cursor-pointer" title="Class 02: Potential Industrial Incident">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+              <span>Incident</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-emerald-400 hover:scale-105 transition-transform cursor-pointer" title="Class 01: Potential Industrial Thermal Source / Flare">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>
+              <span>Normal Flare</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-green-400 hover:scale-105 transition-transform cursor-pointer" title="Class 03: Forest Fire / Wildfire">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span>
+              <span>Wildfire</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-amber-400 hover:scale-105 transition-transform cursor-pointer" title="Class 04: Agricultural / Stubble Burning">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>
+              <span>Stubble</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-purple-300 hover:scale-105 transition-transform cursor-pointer" title="Class 05: Mining Area / Coal Mine Fire">
+              <span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block"></span>
+              <span>Mining</span>
+            </span>
+            <span className="flex items-center gap-1.5 text-orange-400 hover:scale-105 transition-transform cursor-pointer" title="Class 06: Urban / Landfill Fire">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block"></span>
+              <span>Urban</span>
+            </span>
+          </div>
         </div>
 
       </div>
