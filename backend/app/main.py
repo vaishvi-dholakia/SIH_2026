@@ -55,11 +55,13 @@ async def ensure_live_osm_data():
                 poly = wkt.loads(r.geometry)
                 centroid = poly.centroid
                 if not is_point_in_india(centroid.y, centroid.x):
-                    db.query(SuppressionHistory).filter(SuppressionHistory.refinery_id == r.id).delete()
+                    db.query(ActiveHotspot).filter(ActiveHotspot.nearest_refinery_id == r.id).update({"nearest_refinery_id": None}, synchronize_session=False)
+                    db.query(SuppressionHistory).filter(SuppressionHistory.refinery_id == r.id).delete(synchronize_session=False)
                     db.delete(r)
                     purged_ref += 1
-            except Exception:
-                pass
+            except Exception as ref_err:
+                logger.warning(f"Skipped deleting refinery #{r.id}: {ref_err}")
+                db.rollback()
         
         # Clean orphan suppression history
         db.query(SuppressionHistory).filter(SuppressionHistory.refinery_id.is_(None)).delete()
