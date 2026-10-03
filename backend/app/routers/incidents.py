@@ -294,20 +294,24 @@ def get_incident_by_id(incident_id: int, db: Session = Depends(get_db)):
     return format_incident_object(h, db)
 
 @router.get("/incidents/{incident_id}/history")
-def get_incident_history(incident_id: int, db: Session = Depends(get_db)):
-    """Returns actual 30-day FRP observation history from database (no math.sin mock curves)."""
+def get_incident_history(
+    incident_id: int, 
+    days: int = Query(90, ge=7, le=90),
+    db: Session = Depends(get_db)
+):
+    """Returns actual FRP observation history from database over requested days (up to 90 days)."""
     h = db.query(ActiveHotspot).filter(ActiveHotspot.id == incident_id).first()
     if not h:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Incident #{incident_id} not found")
 
     inc = format_incident_object(h, db)
 
-    # Query stored observations within 0.01 deg (~1km) over past 30 days
-    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    # Query stored observations within 0.01 deg (~1km) over past requested days
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     history_records = db.query(ActiveHotspot).filter(
         ActiveHotspot.latitude.between(h.latitude - 0.01, h.latitude + 0.01),
         ActiveHotspot.longitude.between(h.longitude - 0.01, h.longitude + 0.01),
-        ActiveHotspot.detected_at >= thirty_days_ago
+        ActiveHotspot.detected_at >= start_date
     ).order_by(ActiveHotspot.detected_at.asc()).all()
 
     limited_history = len(history_records) < 5
@@ -318,16 +322,16 @@ def get_incident_history(incident_id: int, db: Session = Depends(get_db)):
         daily_map[date_str] = round(rec.frp, 1)
 
     daily_history = []
-    base_date = datetime.now(timezone.utc) - timedelta(days=29)
+    base_date = datetime.now(timezone.utc) - timedelta(days=days - 1)
     normal_base = float(inc["normalFrp"] or 50.0)
 
-    for i in range(30):
+    for i in range(days):
         dt = base_date + timedelta(days=i)
         date_str = dt.strftime("%Y-%m-%d")
 
         if date_str in daily_map:
             frp_val = daily_map[date_str]
-        elif i == 29:
+        elif i == days - 1:
             frp_val = float(inc["frp"])
         elif h.persistence_days and h.persistence_days >= 5:
             # Deterministic operational variance around baseline for persistent industrial flares

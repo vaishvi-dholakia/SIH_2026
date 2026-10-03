@@ -69,9 +69,9 @@ export const fetchIncidentById = async (id) => {
   return response.data;
 };
 
-export const fetchIncidentHistory = async (id) => {
+export const fetchIncidentHistory = async (id, days = 90) => {
   try {
-    const response = await apiClient.get(`/api/incidents/${id}/history`);
+    const response = await apiClient.get(`/api/incidents/${id}/history?days=${days}`);
     return response.data;
   } catch (e) {
     return null;

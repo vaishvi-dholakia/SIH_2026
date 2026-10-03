@@ -25,7 +25,7 @@ export default function HistoryView({ incidents = [] }) {
     setLoading(true);
 
     Promise.all([
-      fetchIncidentHistory(activeInc.id),
+      fetchIncidentHistory(activeInc.id, 90),
       fetchIncidentSatellite(activeInc.id)
     ]).then(([histRes, satRes]) => {
       if (histRes) {
@@ -53,8 +53,8 @@ export default function HistoryView({ incidents = [] }) {
   const filteredHistoryData = useMemo(() => {
     if (!historyData || historyData.length === 0) return [];
     if (timeRange === '7D') return historyData.slice(-7);
-    if (timeRange === '90D') return historyData;
-    return historyData.slice(-30);
+    if (timeRange === '30D') return historyData.slice(-30);
+    return historyData; // 90D returns all 90 telemetry points
   }, [historyData, timeRange]);
 
   if (!activeInc) {
@@ -77,12 +77,37 @@ export default function HistoryView({ incidents = [] }) {
     : [0, 'auto'];
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="relative space-y-6 font-sans bg-[#0c1017] border border-[#1e2736] p-6 rounded-2xl overflow-hidden shadow-2xl">
       
+      {/* Tactical GIS Satellite Map Background Overlay */}
+      <div className="absolute inset-0 pointer-events-none opacity-20 overflow-hidden">
+        <svg className="w-full h-full text-slate-700" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+          <defs>
+            <pattern id="gis-grid-pattern" width="48" height="48" patternUnits="userSpaceOnUse">
+              <path d="M 48 0 L 0 0 0 48" fill="none" stroke="rgba(56, 189, 248, 0.25)" strokeWidth="1"/>
+              <circle cx="48" cy="0" r="1.5" fill="rgba(56, 189, 248, 0.5)"/>
+            </pattern>
+            <pattern id="gis-dots-pattern" width="16" height="16" patternUnits="userSpaceOnUse">
+              <circle cx="2" cy="2" r="1" fill="rgba(255, 255, 255, 0.08)" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#gis-grid-pattern)" />
+          <rect width="100%" height="100%" fill="url(#gis-dots-pattern)" />
+          {/* Subtle GIS Topo Contour Lines */}
+          <path d="M 0 100 Q 200 40 400 120 T 800 80 T 1200 160" fill="none" stroke="rgba(16, 185, 129, 0.15)" strokeWidth="1.5" strokeDasharray="4 4" />
+          <path d="M 0 250 Q 300 180 600 280 T 1200 220" fill="none" stroke="rgba(239, 68, 68, 0.12)" strokeWidth="1.5" strokeDasharray="6 6" />
+        </svg>
+      </div>
+
       {/* Option 2 Header & Time Controls Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-[#F5F5F5] tracking-tight uppercase">HISTORICAL FLARING AUDIT</h2>
+          <h2 className="text-xl font-bold text-[#F5F5F5] tracking-tight uppercase flex items-center gap-2">
+            <span>HISTORICAL FLARING AUDIT</span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 uppercase">
+              {timeRange} WINDOW
+            </span>
+          </h2>
           <p className="text-xs text-slate-400 mt-0.5">Analysis of detected flaring activities and environmental impacts</p>
         </div>
 
@@ -90,15 +115,15 @@ export default function HistoryView({ incidents = [] }) {
         <div className="flex flex-wrap items-center gap-3">
           
           {/* Segmented Time Range Pills */}
-          <div className="flex items-center bg-[#161616] border border-[#383838] p-1 rounded-xl shadow-inner font-mono">
+          <div className="flex items-center bg-[#141a24]/90 border border-[#2a364a] p-1 rounded-xl shadow-inner font-mono backdrop-blur-md">
             {['7D', '30D', '90D'].map((range) => (
               <button
                 key={range}
                 onClick={() => setTimeRange(range)}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-3.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   timeRange === range
-                    ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20 scale-105'
-                    : 'text-slate-400 hover:text-white hover:bg-[#242424]'
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-lg shadow-emerald-500/30 scale-105'
+                    : 'text-slate-400 hover:text-white hover:bg-[#202938]'
                 }`}
               >
                 {range}
@@ -107,12 +132,12 @@ export default function HistoryView({ incidents = [] }) {
           </div>
 
           {/* Industrial Site Selector */}
-          <div className="flex items-center gap-2 bg-[#242424] border border-[#383838] p-1.5 rounded-xl">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2">Telemetry Site:</span>
+          <div className="flex items-center gap-2 bg-[#141a24]/90 border border-[#2a364a] p-1.5 rounded-xl backdrop-blur-md">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2 font-mono">Site:</span>
             <select
               value={activeInc.id}
               onChange={(e) => setSelectedIncidentId(e.target.value)}
-              className="bg-[#161616] border border-[#383838] text-[#F5F5F5] font-bold text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
+              className="bg-[#0c1017] border border-[#2a364a] text-[#F5F5F5] font-bold text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
             >
               {incidents.map((inc) => (
                 <option key={inc.id} value={inc.id}>
@@ -126,11 +151,12 @@ export default function HistoryView({ incidents = [] }) {
       </div>
 
       {/* THERMAL ACTIVITY CHART CARD */}
-      <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#383838] pb-4">
+      <div className="relative z-10 bg-[#141a24]/90 border border-[#2a364a] rounded-2xl p-6 space-y-4 shadow-2xl backdrop-blur-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#2a364a] pb-4">
           <div>
             <h3 className="text-base font-extrabold text-[#F5F5F5] flex items-center gap-2">
               <span>Observed Satellite FRP vs. Baseline</span>
+              <span className="text-[11px] font-mono text-slate-400 font-normal">({filteredHistoryData.length} Telemetry Passes)</span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">Green shaded band indicates normal baseline range. Red line represents actual satellite FRP detections.</p>
           </div>
@@ -138,7 +164,7 @@ export default function HistoryView({ incidents = [] }) {
           <div className="flex items-center gap-3 text-xs font-mono">
             <button
               onClick={() => setChartScale(chartScale === 'zoom' ? 'full' : 'zoom')}
-              className="px-2.5 py-1 bg-[#161616] hover:bg-[#383838] text-slate-300 rounded border border-[#383838] cursor-pointer transition-colors"
+              className="px-2.5 py-1 bg-[#0c1017] hover:bg-[#202938] text-slate-300 rounded border border-[#2a364a] cursor-pointer transition-colors"
             >
               {chartScale === 'zoom' ? '🔍 Reset Scale' : '🔍 Zoom Baseline'}
             </button>
