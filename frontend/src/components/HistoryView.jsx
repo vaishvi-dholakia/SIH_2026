@@ -54,8 +54,12 @@ export default function HistoryView({ incidents = [] }) {
 
   useEffect(() => {
     if (!activeInc?.id) return;
-    setLoading(true);
+    
+    // Initialize history data synchronously so chart renders instantly (0ms wait time)
+    setHistoryData(generateFallbackHistory(activeInc, 90));
+    setLoading(false);
 
+    // Fetch live backend telemetry in the background without blocking the UI
     Promise.all([
       fetchIncidentHistory(activeInc.id, 90),
       fetchIncidentSatellite(activeInc.id)
@@ -69,19 +73,13 @@ export default function HistoryView({ incidents = [] }) {
           normalMax: item.normalMax,
           normalMin: item.normalMin
         })));
-      } else {
-        // Use reliable fallback telemetry if endpoint returns empty array
-        setHistoryData(generateFallbackHistory(activeInc, 90));
       }
 
       if (satRes) {
         setSatelliteData(satRes);
       }
-      setLoading(false);
     }).catch(err => {
-      console.error("Error loading incident telemetry, initializing fallback baseline:", err);
-      setHistoryData(generateFallbackHistory(activeInc, 90));
-      setLoading(false);
+      console.error("Background telemetry fetch caught exception:", err);
     });
   }, [activeInc?.id]);
 
