@@ -10,6 +10,7 @@ export default function HistoryView({ incidents = [] }) {
   const [loading, setLoading] = useState(false);
   const [historyMeta, setHistoryMeta] = useState(null);
   const [chartScale, setChartScale] = useState('full'); // 'full' or 'zoom'
+  const [timeRange, setTimeRange] = useState('30D'); // Option 2 filter state: '7D', '30D', '90D'
 
   useEffect(() => {
     if (incidents.length > 0 && !selectedIncidentId) {
@@ -49,10 +50,17 @@ export default function HistoryView({ incidents = [] }) {
     });
   }, [activeInc?.id]);
 
+  const filteredHistoryData = useMemo(() => {
+    if (!historyData || historyData.length === 0) return [];
+    if (timeRange === '7D') return historyData.slice(-7);
+    if (timeRange === '90D') return historyData;
+    return historyData.slice(-30);
+  }, [historyData, timeRange]);
+
   if (!activeInc) {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center text-slate-400">
-        <p className="text-base font-semibold">No live thermal events available for 30-day temporal analysis.</p>
+        <p className="text-base font-semibold">No live thermal events available for temporal analysis.</p>
       </div>
     );
   }
@@ -63,7 +71,7 @@ export default function HistoryView({ incidents = [] }) {
   const limitedHistory = historyMeta?.limitedHistory ?? false;
 
   // Smart Y-Axis Domain calculation
-  const maxObservedFrp = Math.max(...historyData.map(d => d.frp || 0), activeInc.frp || 0);
+  const maxObservedFrp = Math.max(...filteredHistoryData.map(d => d.frp || 0), activeInc.frp || 0);
   const yDomain = chartScale === 'zoom' 
     ? [0, Math.max(normalMax * 2, 80)] 
     : [0, 'auto'];
@@ -71,38 +79,60 @@ export default function HistoryView({ incidents = [] }) {
   return (
     <div className="space-y-6 font-sans">
       
-      {/* Top Section */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Option 2 Header & Time Controls Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black text-[#F5F5F5] tracking-tight uppercase">30-DAY TEMPORAL ANALYSIS</h2>
-          <p className="text-sm text-slate-400">Historical thermal output baselines & smart flaring suppression audit</p>
+          <h2 className="text-xl font-bold text-[#F5F5F5] tracking-tight uppercase">HISTORICAL FLARING AUDIT</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Analysis of detected flaring activities and environmental impacts</p>
         </div>
 
-        {/* Industrial Site Selector */}
-        <div className="flex items-center gap-2 bg-[#242424] border border-[#383838] p-2 rounded-xl">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2">Telemetry Site:</span>
-          <select
-            value={activeInc.id}
-            onChange={(e) => setSelectedIncidentId(e.target.value)}
-            className="bg-[#161616] border border-[#383838] text-[#F5F5F5] font-bold text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-red-500 cursor-pointer"
-          >
-            {incidents.map((inc) => (
-              <option key={inc.id} value={inc.id}>
-                {inc.locationDisplay || inc.nearestFacility} ({inc.classification})
-              </option>
+        {/* Top Controls: Time Filter Segment & Telemetry Site Selector */}
+        <div className="flex flex-wrap items-center gap-3">
+          
+          {/* Segmented Time Range Pills */}
+          <div className="flex items-center bg-[#161616] border border-[#383838] p-1 rounded-xl shadow-inner font-mono">
+            {['7D', '30D', '90D'].map((range) => (
+              <button
+                key={range}
+                onClick={() => setTimeRange(range)}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  timeRange === range
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20 scale-105'
+                    : 'text-slate-400 hover:text-white hover:bg-[#242424]'
+                }`}
+              >
+                {range}
+              </button>
             ))}
-          </select>
+          </div>
+
+          {/* Industrial Site Selector */}
+          <div className="flex items-center gap-2 bg-[#242424] border border-[#383838] p-1.5 rounded-xl">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2">Telemetry Site:</span>
+            <select
+              value={activeInc.id}
+              onChange={(e) => setSelectedIncidentId(e.target.value)}
+              className="bg-[#161616] border border-[#383838] text-[#F5F5F5] font-bold text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              {incidents.map((inc) => (
+                <option key={inc.id} value={inc.id}>
+                  {inc.locationDisplay || inc.nearestFacility} ({inc.classification})
+                </option>
+              ))}
+            </select>
+          </div>
+
         </div>
       </div>
 
-      {/* 30-DAY THERMAL ACTIVITY CHART */}
+      {/* THERMAL ACTIVITY CHART CARD */}
       <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#383838] pb-4">
           <div>
             <h3 className="text-base font-extrabold text-[#F5F5F5] flex items-center gap-2">
-              <span>30-Day Observed FRP vs Operational Baseline (MW)</span>
+              <span>Observed Satellite FRP vs. Baseline</span>
             </h3>
-            <p className="text-xs text-slate-400">Green shaded band indicates normal baseline range. Red line represents actual satellite FRP detections.</p>
+            <p className="text-xs text-slate-400 mt-0.5">Green shaded band indicates normal baseline range. Red line represents actual satellite FRP detections.</p>
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono">
@@ -120,11 +150,11 @@ export default function HistoryView({ incidents = [] }) {
         <div className="h-72 w-full pt-2">
           {loading ? (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm font-mono animate-pulse">
-              Loading 30-day temporal baseline telemetry...
+              Loading {timeRange} temporal baseline telemetry...
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={historyData}>
+              <LineChart data={filteredHistoryData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#383838" />
                 <XAxis dataKey="day" stroke="#888888" tick={{ fontSize: 11, fill: '#888888' }} />
                 <YAxis stroke="#888888" tick={{ fontSize: 11, fill: '#888888' }} domain={yDomain} allowDataOverflow={chartScale === 'zoom'} />
