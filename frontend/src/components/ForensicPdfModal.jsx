@@ -17,7 +17,7 @@ export default function ForensicPdfModal({ hotspot, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans select-text print:p-0 print:bg-white">
+    <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans select-text print:p-0 print:bg-white">
       
       <div className="print-modal-container bg-[#242424] border border-[#383838] rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-6 p-6 text-[#F5F5F5] relative print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
         
