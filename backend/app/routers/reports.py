@@ -16,15 +16,20 @@ class IncidentPDF(FPDF):
     def header(self):
         # Header banner
         self.set_fill_color(24, 32, 47)  # Dark Navy
-        self.rect(0, 0, 210, 22, "F")
-        self.set_font("Helvetica", "B", 13)
+        self.rect(0, 0, 210, 25, "F")
+        self.set_font("Helvetica", "B", 12)
         self.set_text_color(255, 255, 255)
-        self.set_xy(10, 5)
-        self.cell(0, 7, "GEO-SCD | NTRO FORENSIC INCIDENT AUDIT DOSSIER", 0, 1, "L")
-        self.set_font("Helvetica", "", 8.5)
-        self.set_text_color(200, 210, 230)
-        self.set_xy(10, 12)
-        self.cell(0, 5, "AI-Driven Geospatial Thermal Anomaly & Fire Classification System", 0, 1, "L")
+        self.set_xy(10, 4)
+        self.cell(0, 5.5, "GEO-SCD | NTRO FORENSIC INCIDENT AUDIT DOSSIER", 0, 1, "L")
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(203, 213, 225)
+        self.set_xy(10, 10.5)
+        self.cell(0, 4.5, "AI-Driven Geospatial Thermal Anomaly & Fire Classification System", 0, 1, "L")
+        self.set_font("Helvetica", "B", 8.5)
+        self.set_text_color(56, 189, 248) # Crisp Light Cyan
+        self.set_xy(10, 16.5)
+        dossier_title = getattr(self, "dossier_title", "INCIDENT DOSSIER AUDIT REPORT")
+        self.cell(0, 5, dossier_title, 0, 1, "L")
     
     def footer(self):
         self.set_y(-14)
@@ -74,15 +79,11 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     )
 
     pdf = IncidentPDF()
+    pdf.dossier_title = f"INCIDENT DOSSIER: #{hotspot.id} -- {hotspot.classification.upper()}"
     pdf.alias_nb_pages()
-    pdf.set_margins(10, 24, 10)
+    pdf.set_margins(10, 28, 10)
     pdf.set_auto_page_break(auto=True, margin=10)
     pdf.add_page()
-
-    # Incident Overview Title
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.set_text_color(30, 41, 59)
-    pdf.cell(0, 6, f"INCIDENT DOSSIER: #{hotspot.id} -- {hotspot.classification.upper()}", 0, 1, "L")
 
     # Priority Score Banner
     if sev_label == "Critical":
@@ -189,7 +190,7 @@ def generate_incident_pdf(hotspot_id: int, db: Session = Depends(get_db)):
     for step_title, step_desc in sop_steps:
         pdf.set_font("Helvetica", "B", 8)
         pdf.set_text_color(185, 28, 28) if is_crit else pdf.set_text_color(30, 41, 59)
-        pdf.cell(48, 4.8, step_title, 0, 0, "L")
+        pdf.cell(60, 4.8, step_title, 0, 0, "L")
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(51, 65, 85)
         pdf.cell(0, 4.8, step_desc, 0, 1, "L")
