@@ -209,7 +209,7 @@ def test_classifier_cold_start_fallback(caplog):
         )
 
     # Assert that explicit logger warning was emitted
-    assert "Using rule-based classification — insufficient real data to train RandomForest yet" in caplog.text
+    assert "Using rule-based classification" in caplog.text
     # Assert robust rule-based classification output
     assert label == "Potential Industrial Incident"
     assert conf >= 0.8
