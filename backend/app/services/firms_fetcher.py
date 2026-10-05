@@ -223,7 +223,7 @@ class FIRMSFetcher:
 
         # Gap 5.2 & Gap 4: Open-Meteo Real-Time Weather Integration with Spatial Grid Caching
         from app.services.weather_service import WeatherService
-        weather_data = await WeatherService.get_weather(lat, lon)
+        weather_data = WeatherService.get_weather(lat, lon)
         relative_humidity = weather_data.get("relative_humidity", 50.0)
         wind_speed_kmh = weather_data.get("wind_speed_kmh", 12.0)
         wind_direction_deg = weather_data.get("wind_direction_deg", 180.0)
