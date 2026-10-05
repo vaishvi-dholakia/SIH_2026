@@ -177,7 +177,11 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
                   const riskClass = getRiskColor(h.priority_score || 0);
 
                   return (
-                    <tr key={h.id} className="hover:bg-command-900/60 transition-colors">
+                    <tr key={h.id} className={`hover:bg-command-900/60 transition-colors ${
+                      (h.priority_score >= 75 || h.priority === 'Critical' || h.classificationClass === '02')
+                        ? 'border-l-4 border-l-red-500 bg-red-500/10 animate-pulse'
+                        : ''
+                    }`}>
                       {/* ID & Date */}
                       <td className="p-3 font-bold">
                         <div className="text-tactical-cyan">#{h.id}</div>

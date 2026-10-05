@@ -322,6 +322,14 @@ function MapViewInner({
           </div>
         )}
 
+        {/* Top Centered Pulsating Red Emergency Alert Banner */}
+        {displayIncidents.some(i => i.priority === 'Critical' || i.classificationClass === '02' || (i.frpRatio && i.frpRatio >= 2.5)) && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-red-600/90 text-white border border-red-400 px-4 py-1.5 rounded-full backdrop-blur-md shadow-[0_0_20px_rgba(239,68,68,0.6)] flex items-center gap-2 text-xs font-bold tracking-wide animate-pulse pointer-events-auto">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+            <span>🚨 LIVE ALERT: Unsuppressed Industrial Incident Detected | FRP Surge &gt;300%</span>
+          </div>
+        )}
+
         <MapContainer
           center={defaultCenter}
           zoom={defaultZoom}

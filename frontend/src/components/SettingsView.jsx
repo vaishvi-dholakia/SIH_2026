@@ -48,15 +48,15 @@ export default function SettingsView({ onLogout }) {
         <div className="bg-[#242424] border border-[#383838] rounded-xl p-6 space-y-4 shadow-sm">
           <div className="flex items-center gap-2 text-[#F5F5F5] font-bold text-base border-b border-[#383838] pb-3">
             <Bell className="w-5 h-5 text-red-500" />
-            <span>Alert & Sound Notifications</span>
+            <span>Live Telemetry & Visual Alert Stream</span>
           </div>
 
           <div className="space-y-4 text-sm text-slate-300">
 
             <label className="flex items-center justify-between cursor-pointer p-3 bg-[#161616] rounded-lg border border-[#383838]">
               <div>
-                <strong className="text-[#F5F5F5] block font-semibold">Live Telemetry Auto-Stream</strong>
-                <span className="text-xs text-slate-400">Automatically refresh thermal hotspot data periodically in the background.</span>
+                <strong className="text-[#F5F5F5] block font-semibold">Live Dashboard Alert Feed</strong>
+                <span className="text-xs text-slate-400">Automatically streams incoming satellite hotspots via WebSockets and displays visual emergency alerts on the GIS map.</span>
               </div>
               <input
                 type="checkbox"
