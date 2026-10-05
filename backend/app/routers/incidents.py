@@ -210,19 +210,22 @@ def aggregate_incidents(formatted_list: List[Dict[str, Any]]) -> List[Dict[str, 
 @router.get("/dashboard/summary")
 def get_dashboard_summary(db: Session = Depends(get_db)):
     """Returns high-level summary KPI metrics dynamically from active database records."""
-    from sqlalchemy import func
+    from sqlalchemy import func, cast, Numeric, String
     total_raw = db.query(func.count(ActiveHotspot.id)).scalar() or 0
     raw_suppressed = db.query(func.count(ActiveHotspot.id)).filter(ActiveHotspot.is_suppressed == True).scalar() or 0
     critical_count = db.query(func.count(ActiveHotspot.id)).filter(ActiveHotspot.priority_score >= 80, ActiveHotspot.is_suppressed == False).scalar() or 0
     high_count = db.query(func.count(ActiveHotspot.id)).filter(ActiveHotspot.priority_score.between(60, 79), ActiveHotspot.is_suppressed == False).scalar() or 0
 
-    # Fast cluster count (master hotspots grouped by spatial grid & classification class)
-    grid_expr = func.round(ActiveHotspot.latitude, 2).concat("_").concat(
-        func.round(ActiveHotspot.longitude, 2)
-    ).concat("_").concat(ActiveHotspot.classification_class)
+    try:
+        lat_str = cast(func.round(cast(ActiveHotspot.latitude, Numeric), 2), String)
+        lon_str = cast(func.round(cast(ActiveHotspot.longitude, Numeric), 2), String)
+        grid_expr = lat_str.concat("_").concat(lon_str).concat("_").concat(ActiveHotspot.classification_class)
 
-    cluster_count = db.query(func.count(func.distinct(grid_expr))).scalar() or total_raw
-    suppressed_cluster_count = db.query(func.count(func.distinct(grid_expr))).filter(ActiveHotspot.is_suppressed == True).scalar() or 0
+        cluster_count = db.query(func.count(func.distinct(grid_expr))).scalar() or total_raw
+        suppressed_cluster_count = db.query(func.count(func.distinct(grid_expr))).filter(ActiveHotspot.is_suppressed == True).scalar() or 0
+    except Exception as e:
+        cluster_count = total_raw
+        suppressed_cluster_count = raw_suppressed
 
     return {
         "totalHotspots": cluster_count,
