@@ -157,7 +157,7 @@ class HistoricalBackfillService:
         for i, r in enumerate(selected_records):
             try:
                 await FIRMSFetcher.process_and_ingest_hotspot(
-                    r, db, ws_broadcast_callback=None, geofence_cache=geofence_cache, commit=False
+                    r, db, ws_broadcast_callback=None, geofence_cache=geofence_cache, commit=False, fast_mode=True
                 )
                 processed_count += 1
                 if processed_count % 500 == 0:

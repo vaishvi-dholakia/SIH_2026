@@ -1,5 +1,6 @@
 import csv
 import io
+import inspect
 import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -171,7 +172,8 @@ class FIRMSFetcher:
         db: Session,
         ws_broadcast_callback=None,
         geofence_cache: Optional[Dict[str, Any]] = None,
-        commit: bool = True
+        commit: bool = True,
+        fast_mode: bool = False
     ) -> Optional[ActiveHotspot]:
         """
         Executes the mandatory 5-step conditional ingestion sequence:
@@ -223,7 +225,10 @@ class FIRMSFetcher:
 
         # Gap 5.2 & Gap 4: Open-Meteo Real-Time Weather Integration with Spatial Grid Caching
         from app.services.weather_service import WeatherService
-        weather_data = WeatherService.get_weather(lat, lon)
+        if fast_mode:
+            weather_data = WeatherService._mathematical_weather_fallback(lat, lon)
+        else:
+            weather_data = WeatherService.get_weather(lat, lon)
         relative_humidity = weather_data.get("relative_humidity", 50.0)
         wind_speed_kmh = weather_data.get("wind_speed_kmh", 12.0)
         wind_direction_deg = weather_data.get("wind_direction_deg", 180.0)
@@ -255,15 +260,16 @@ class FIRMSFetcher:
                 is_critical_alarm = True
                 ndvi_pending = True
                 # Gap 1: Sentinel-2 On-Demand Ingestion Trigger
-                try:
-                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
-                    if s2_ndvi is not None:
-                        ndvi = s2_ndvi
-                        ndvi_pending = False
-                    else:
-                        ndvi_pending = is_pending
-                except Exception as s2_err:
-                    logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
+                if not fast_mode:
+                    try:
+                        s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+                        if s2_ndvi is not None:
+                            ndvi = s2_ndvi
+                            ndvi_pending = False
+                        else:
+                            ndvi_pending = is_pending
+                    except Exception as s2_err:
+                        logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
             elif is_suppressed:
                 classification_class = "01"
                 classification = "Potential Industrial Thermal Source"
@@ -274,15 +280,16 @@ class FIRMSFetcher:
                 classification = "Potential Industrial Incident"
                 is_suppressed = False
                 ndvi_pending = True
-                try:
-                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
-                    if s2_ndvi is not None:
-                        ndvi = s2_ndvi
-                        ndvi_pending = False
-                    else:
-                        ndvi_pending = is_pending
-                except Exception as s2_err:
-                    logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
+                if not fast_mode:
+                    try:
+                        s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+                        if s2_ndvi is not None:
+                            ndvi = s2_ndvi
+                            ndvi_pending = False
+                        else:
+                            ndvi_pending = is_pending
+                    except Exception as s2_err:
+                        logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
 
             model_conf = 0.95
             anomaly_score = min(1.0, frp_ratio / 3.0) if frp_ratio > 1.0 else 0.1
@@ -300,7 +307,7 @@ class FIRMSFetcher:
             )
 
             # Gap 1: Trigger Sentinel-2 for unsuppressed fires outside refinery
-            if not is_suppressed and spatial_res.distance_to_refinery_m > 300.0:
+            if not fast_mode and not is_suppressed and spatial_res.distance_to_refinery_m > 300.0:
                 try:
                     s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
                     if s2_ndvi is not None:
@@ -494,7 +501,10 @@ class FIRMSFetcher:
                     "distance_to_refinery_m": hotspot.distance_to_refinery_m,
                     "detected_at": hotspot.detected_at.isoformat()
                 }
-                await ws_broadcast_callback(alert_payload)
+                if callable(ws_broadcast_callback):
+                    res = ws_broadcast_callback(alert_payload)
+                    if inspect.isawaitable(res):
+                        await res
             except Exception as ws_err:
                 logger.warning(f"Failed broadcasting alert to WebSocket clients: {ws_err}")
 
