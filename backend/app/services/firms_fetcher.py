@@ -378,13 +378,9 @@ class FIRMSFetcher:
         # Validate nearest_refinery_id against DB FK constraints
         refinery_id = spatial_res.nearest_refinery_id
         if refinery_id is not None:
-            if geofence_cache is not None and "valid_refinery_ids" in geofence_cache:
-                if refinery_id not in geofence_cache["valid_refinery_ids"]:
-                    refinery_id = None
-            else:
-                from app.models.refinery import Refinery
-                if not db.query(Refinery.id).filter(Refinery.id == refinery_id).first():
-                    refinery_id = None
+            from app.models.refinery import Refinery
+            if not db.query(Refinery.id).filter(Refinery.id == refinery_id).first():
+                refinery_id = None
 
         if existing:
             hotspot = existing
