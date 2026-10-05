@@ -120,15 +120,19 @@ function MapController({ targetIncident, tileSource }) {
   }, [map, tileSource]);
 
   useEffect(() => {
-    try {
-      if (map && targetIncident) {
-        const lat = parseFloat(targetIncident.latitude ?? targetIncident.lat);
-        const lng = parseFloat(targetIncident.longitude ?? targetIncident.lng ?? targetIncident.lon);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          map.flyTo([lat, lng], 13, { animate: true, duration: 1.2 });
-        }
-      }
-    } catch (e) {}
+    if (!map || !targetIncident) return;
+    const lat = parseFloat(targetIncident.latitude ?? targetIncident.lat);
+    const lng = parseFloat(targetIncident.longitude ?? targetIncident.lng ?? targetIncident.lon);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      const flyTimer = setTimeout(() => {
+        try {
+          if (typeof map.flyTo === 'function') {
+            map.flyTo([lat, lng], 13, { animate: true, duration: 1.0 });
+          }
+        } catch (e) {}
+      }, 120);
+      return () => clearTimeout(flyTimer);
+    }
   }, [targetIncident, map]);
 
   return null;
@@ -172,9 +176,10 @@ function MapViewInner({
   // Parse valid coordinates for map markers
   const validIndianIncidents = safeIncidents.map(inc => {
     if (!inc) return null;
-    const lat = parseFloat(inc.latitude);
-    const lng = parseFloat(inc.longitude);
+    const lat = parseFloat(inc.latitude ?? inc.lat);
+    const lng = parseFloat(inc.longitude ?? inc.lng ?? inc.lon);
     if (isNaN(lat) || isNaN(lng)) return null;
+    if (lat < INDIA_BBOX.MIN_LAT || lat > INDIA_BBOX.MAX_LAT || lng < INDIA_BBOX.MIN_LON || lng > INDIA_BBOX.MAX_LON) return null;
     return { ...inc, latitude: lat, longitude: lng };
   }).filter(Boolean);
 

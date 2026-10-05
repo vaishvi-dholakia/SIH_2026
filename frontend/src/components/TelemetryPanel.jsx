@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Cpu, FileText, Flame, MapPin, ShieldAlert, Terminal, Wind, Radio } from 'lucide-react';
+import { Activity, Cpu, FileText, Flame, MapPin, ShieldAlert, Terminal, Wind, Radio, Droplets, Ruler } from 'lucide-react';
 
 function intOrFallback(val, fallback = 1200) {
   if (val === null || val === undefined || isNaN(val)) return fallback;
@@ -52,14 +52,19 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
   const lonStr = `${Math.abs(lon).toFixed(5)}° ${lon >= 0 ? 'E' : 'W'}`;
   const geoId = h.id ? `GEO-2026-JM${h.id}` : 'GEO-2026-JM11';
 
+  const distRef = h.distanceToRefineryM ?? h.distance_to_refinery_m ?? 350;
   const facility = h.nearestRefineryName || h.nearest_refinery_name || h.nearestFacility || (distRef <= 5000 ? 'Industrial Facility' : 'Open Region');
   const frpVal = h.frp ?? 0;
   const frpChange = h.frpChangePercent ?? h.frp_change_percent ?? 0;
-  const distRef = h.distanceToRefineryM ?? h.distance_to_refinery_m ?? 350;
   const distPop = h.distanceToPopulationM ?? h.distance_to_population_m ?? 1200;
   const baselineFrp = h.historicalBaselineFrp ?? h.historical_baseline_frp ?? Math.max(10, Math.round(frpVal / 1.5));
   const frpRatio = h.frpRatio ?? (baselineFrp > 0 ? (frpVal / baselineFrp).toFixed(1) : 1.0);
   const wind = getWindTelemetry(lat, lon);
+  const flameTempK = Math.round(Number(h.flameTemperatureK ?? h.flame_temperature_k ?? (distRef <= 5000 ? 1650 : 950)));
+  const footprintSqm = Math.round(Number(h.sourceFootprintSqm ?? h.source_footprint_sqm ?? (distRef <= 5000 ? 35 : Math.max(50, Math.round(frpVal * 24.5)))));
+  const relHumidity = Math.round(Number(h.relativeHumidity ?? h.relative_humidity ?? 50));
+  const windSpeedKmh = Math.round(Number(h.windSpeedKmh ?? h.wind_speed_kmh ?? wind.speed));
+  const windDirDeg = Math.round(Number(h.windDirectionDeg ?? h.wind_direction_deg ?? 180));
 
   // Check if NDVI was actually calculated from real Sentinel-2 pass
   const hasNdvi = h.ndvi !== null && h.ndvi !== undefined && !isNaN(Number(h.ndvi));
@@ -233,15 +238,15 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
         </span>
       </div>
 
-      {/* Option A: Sleek 3-Card Operational Telemetry Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+      {/* 4-Card Operational Telemetry Grid: Thermal, Physics, Geospatial, Satellite */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
         
         {/* Card 1: Thermal Power & FRP Surge Diagnostic */}
         <div className="bg-[#161616] border border-[#383838] p-3.5 rounded-xl space-y-2.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs border-b border-[#383838]/80 pb-2">
             <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
               <Flame className="w-4 h-4 text-amber-500 shrink-0" />
-              <span>Thermal & Surge Telemetry</span>
+              <span>Thermal & Surge</span>
             </span>
             <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
               {frpChange >= 0 ? `+${frpChange}%` : `${frpChange}%`} Baseline
@@ -251,81 +256,118 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
           <div className="space-y-1">
             <div className="text-2xl font-black font-mono text-amber-400 tracking-tight flex items-baseline gap-1.5">
               <span>{frpVal}</span>
-              <span className="text-xs text-slate-400 font-sans font-bold">MW (Fire Radiative Power)</span>
+              <span className="text-xs text-slate-400 font-sans font-bold">MW (FRP)</span>
             </div>
             <div className="text-xs text-slate-300 flex items-center justify-between">
-              <span>30-Day FRP Surge Ratio:</span>
+              <span>Surge Ratio:</span>
               <strong className="font-mono text-amber-400">{frpRatio}x Baseline</strong>
             </div>
           </div>
 
           <div className="pt-2 border-t border-[#383838]/60">
             {h.is_suppressed || h.isSuppressed ? (
-              <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/40 text-[11px] font-bold px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5">
+              <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/40 text-[11px] font-bold px-2 py-1 rounded-lg text-center flex items-center justify-center gap-1">
                 <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                <span>Suppressed Operational Chimney Flare</span>
+                <span>Suppressed Chimney Flare</span>
               </div>
             ) : frpRatio >= 3.0 ? (
-              <div className="bg-red-500/20 text-red-400 border border-red-500/50 text-[11px] font-black px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.3)]">
+              <div className="bg-red-500/20 text-red-400 border border-red-500/50 text-[11px] font-black px-2 py-1 rounded-lg text-center flex items-center justify-center gap-1 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.3)]">
                 <Flame className="w-3.5 h-3.5 shrink-0 text-red-400" />
-                <span>3x FRP Surge (Explosion Warning)</span>
+                <span>3x Surge Warning</span>
               </div>
             ) : (
-              <div className="bg-amber-500/15 text-amber-300 border border-amber-500/40 text-[11px] font-bold px-2.5 py-1 rounded-lg text-center flex items-center justify-center gap-1.5">
+              <div className="bg-amber-500/15 text-amber-300 border border-amber-500/40 text-[11px] font-bold px-2 py-1 rounded-lg text-center flex items-center justify-center gap-1">
                 <Activity className="w-3.5 h-3.5 shrink-0 text-amber-400" />
-                <span>Active Unsuppressed Thermal Event</span>
+                <span>Active Thermal Event</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Card 2: Asset & Population Proximity */}
+        {/* Card 2: NOAA VNF & Atmospheric Physics */}
         <div className="bg-[#161616] border border-[#383838] p-3.5 rounded-xl space-y-2.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs border-b border-[#383838]/80 pb-2">
             <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-              <ShieldAlert className="w-4 h-4 text-blue-400" />
-              <span>Asset & Population Proximity</span>
+              <Droplets className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>VNF & Weather Physics</span>
             </span>
-            <span className="text-[10px] font-bold text-blue-400 font-mono bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/30">
-              Geospatial Buffer
+            <span className="text-[10px] font-bold text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30">
+              NOAA / Meteo
             </span>
           </div>
 
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1.5 rounded border border-[#383838]">
-              <span className="text-slate-400">Nearest Industrial Facility:</span>
-              <strong className="text-white font-mono">{formatDist(distRef)}</strong>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1 rounded border border-[#383838]">
+              <span className="text-slate-400 flex items-center gap-1">
+                <Flame className="w-3 h-3 text-red-400" /> Flame Temp:
+              </span>
+              <strong className="font-mono text-red-400 font-bold">{flameTempK} K</strong>
             </div>
-
-            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1.5 rounded border border-[#383838]">
-              <span className="text-slate-400">Nearest Population Settlement:</span>
-              <strong className="text-white font-mono">{formatDist(distPop)}</strong>
+            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1 rounded border border-[#383838]">
+              <span className="text-slate-400 flex items-center gap-1">
+                <Ruler className="w-3 h-3 text-amber-400" /> Footprint Area:
+              </span>
+              <strong className="font-mono text-amber-400 font-bold">{footprintSqm} m²</strong>
             </div>
           </div>
 
-          <div className="pt-1.5 border-t border-[#383838]/60 text-[11px] text-slate-300 flex items-center justify-between">
-            <span className="text-slate-400">Proximity Safety Status:</span>
-            <strong className={`font-mono font-bold ${distRef <= 1000 || distPop <= 2000 ? 'text-red-400' : 'text-emerald-400'}`}>
-              {distRef <= 1000 ? 'Critical Buffer Warning' : distPop <= 2000 ? 'Populated Buffer Warning' : 'Safe Proximity Buffer'}
+          <div className="pt-2 border-t border-[#383838]/60 flex items-center justify-between text-[11px]">
+            <span className="text-slate-400 flex items-center gap-1">
+              <Wind className="w-3 h-3 text-emerald-400" /> Wind / Hum:
+            </span>
+            <strong className="font-mono text-emerald-400 font-bold">
+              {windSpeedKmh} km/h • {relHumidity}% RH
             </strong>
           </div>
         </div>
 
-        {/* Card 3: Copernicus Satellite & AI Verification */}
+        {/* Card 3: Asset & Population Proximity */}
+        <div className="bg-[#161616] border border-[#383838] p-3.5 rounded-xl space-y-2.5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs border-b border-[#383838]/80 pb-2">
+            <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+              <ShieldAlert className="w-4 h-4 text-blue-400" />
+              <span>Asset Proximity</span>
+            </span>
+            <span className="text-[10px] font-bold text-blue-400 font-mono bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/30">
+              Buffer
+            </span>
+          </div>
+
+          <div className="space-y-1.5 text-xs">
+            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1 rounded border border-[#383838]">
+              <span className="text-slate-400">Nearest Refinery:</span>
+              <strong className="text-white font-mono">{formatDist(distRef)}</strong>
+            </div>
+
+            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1 rounded border border-[#383838]">
+              <span className="text-slate-400">Settlement:</span>
+              <strong className="text-white font-mono">{formatDist(distPop)}</strong>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-[#383838]/60 text-[11px] text-slate-300 flex items-center justify-between">
+            <span className="text-slate-400">Buffer Safety:</span>
+            <strong className={`font-mono font-bold ${distRef <= 1000 || distPop <= 2000 ? 'text-red-400' : 'text-emerald-400'}`}>
+              {distRef <= 1000 ? 'Critical Buffer' : distPop <= 2000 ? 'Populated Buffer' : 'Safe Buffer'}
+            </strong>
+          </div>
+        </div>
+
+        {/* Card 4: Copernicus Satellite & AI Verification */}
         <div className="bg-[#161616] border border-[#383838] p-3.5 rounded-xl space-y-2.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs border-b border-[#383838]/80 pb-2">
             <span className="font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
               <Radio className="w-4 h-4 text-purple-400" />
-              <span>Satellite & AI Verification</span>
+              <span>Satellite & AI</span>
             </span>
             <span className="text-[10px] font-bold text-purple-300 font-mono bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/30">
               Sentinel-2 MSI
             </span>
           </div>
 
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1.5 rounded border border-[#383838]">
-              <span className="text-slate-400">Vegetation Index (NDVI):</span>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex items-center justify-between bg-[#242424] px-2.5 py-1 rounded border border-[#383838]">
+              <span className="text-slate-400">NDVI:</span>
               {hasNdvi ? (
                 <strong className={`font-mono ${ndviColor}`}>{ndviDisplay}</strong>
               ) : (
@@ -335,7 +377,7 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
               )}
             </div>
 
-            <div className="text-[10px] text-slate-400 px-1">
+            <div className="text-[10px] text-slate-400 px-1 truncate">
               Canopy: <span className="text-slate-200 font-semibold">{ndviText}</span>
             </div>
           </div>
@@ -343,7 +385,7 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
           <div className="pt-2 border-t border-[#383838]/60 flex items-center justify-between text-xs">
             <span className="text-slate-400 flex items-center gap-1">
               <Cpu className="w-3.5 h-3.5 text-blue-400" />
-              <span>Model Confidence:</span>
+              <span>Confidence:</span>
             </span>
             <span className="font-mono font-black text-sm text-blue-400">
               {h.confidence ?? h.classificationConfidence ?? 85}%

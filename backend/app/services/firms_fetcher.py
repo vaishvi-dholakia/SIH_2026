@@ -10,6 +10,7 @@ from app.models.hotspot import ActiveHotspot
 from app.services.spatial_analyser import SpatialAnalyser
 from app.services.suppression import SuppressionEngine
 from app.services.sentinel_ndvi import SentinelNDVIService
+from app.services.vegetation_engine import VegetationEngine
 from app.ml.classifier import classifier_service
 
 logger = logging.getLogger("geoscd.firms_fetcher")
@@ -169,7 +170,8 @@ class FIRMSFetcher:
         raw: Dict[str, Any],
         db: Session,
         ws_broadcast_callback=None,
-        geofence_cache: Optional[Dict[str, Any]] = None
+        geofence_cache: Optional[Dict[str, Any]] = None,
+        commit: bool = True
     ) -> Optional[ActiveHotspot]:
         """
         Executes the mandatory 5-step conditional ingestion sequence:
@@ -200,14 +202,40 @@ class FIRMSFetcher:
         # Step 1: Spatial Analysis
         spatial_res = SpatialAnalyser.analyse_point(lat, lon, db, geofence_cache=geofence_cache)
 
+        # Gap 3: PostGIS Geofence Priority Override
+        # NASA FIRMS frequently mislabels refinery flare stacks as Type 0 (Vegetation).
+        # When within <= 1000m of a registered refinery or inside refinery geofence,
+        # forcefully override firms_type to 2 (Static Land / Industrial) before any branching.
+        if spatial_res.is_inside_refinery or spatial_res.distance_to_refinery_m <= 1000.0:
+            firms_type = 2
+
+        # Gap 5.1: NOAA VIIRS Nightfire (VNF) Dual-Band Planck Combustion Physics
+        from app.services.vnf_service import VNFService
+        is_refinery_zone = (firms_type in [2, 3] or spatial_res.is_inside_refinery or spatial_res.distance_to_refinery_m <= 1000.0)
+        vnf_result = VNFService.calculate_combustion_physics(
+            frp=frp,
+            brightness=brightness,
+            is_refinery_zone=is_refinery_zone,
+            distance_to_refinery_m=spatial_res.distance_to_refinery_m
+        )
+        flame_temp_k = vnf_result["flame_temperature_k"]
+        footprint_sqm = vnf_result["source_footprint_sqm"]
+
+        # Gap 5.2 & Gap 4: Open-Meteo Real-Time Weather Integration with Spatial Grid Caching
+        from app.services.weather_service import WeatherService
+        weather_data = await WeatherService.get_weather(lat, lon)
+        relative_humidity = weather_data.get("relative_humidity", 50.0)
+        wind_speed_kmh = weather_data.get("wind_speed_kmh", 12.0)
+        wind_direction_deg = weather_data.get("wind_direction_deg", 180.0)
+
         # Step 2 & 3: Pre-Routing Decision based on NASA FIRMS type
         ndvi = None
         ndvi_pending = False
         classification_class = "01"
         is_critical_alarm = False
 
-        if firms_type in [2, 3]:
-            # Static Land Source or Offshore -> Route directly to Industrial 1km Geofence Check
+        if firms_type in [2, 3] or spatial_res.is_inside_refinery or spatial_res.distance_to_refinery_m <= 1000.0:
+            # Static Land Source or Refinery Geofence -> Industrial Flaring / Incident Pipeline
             is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
                 SuppressionEngine.evaluate(
                     lat=lat,
@@ -220,12 +248,22 @@ class FIRMSFetcher:
             )
 
             if frp_ratio > 3.0:
-                # EMERGENCY SURGE (>300% FRP) -> Bypass suppression immediately
+                # EMERGENCY SURGE (>300% FRP) -> Bypass suppression immediately & trigger Sentinel-2
                 classification_class = "02"
                 classification = "Potential Industrial Incident"
                 is_suppressed = False
                 is_critical_alarm = True
                 ndvi_pending = True
+                # Gap 1: Sentinel-2 On-Demand Ingestion Trigger
+                try:
+                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+                    if s2_ndvi is not None:
+                        ndvi = s2_ndvi
+                        ndvi_pending = False
+                    else:
+                        ndvi_pending = is_pending
+                except Exception as s2_err:
+                    logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
             elif is_suppressed:
                 classification_class = "01"
                 classification = "Potential Industrial Thermal Source"
@@ -236,35 +274,20 @@ class FIRMSFetcher:
                 classification = "Potential Industrial Incident"
                 is_suppressed = False
                 ndvi_pending = True
+                try:
+                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+                    if s2_ndvi is not None:
+                        ndvi = s2_ndvi
+                        ndvi_pending = False
+                    else:
+                        ndvi_pending = is_pending
+                except Exception as s2_err:
+                    logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
 
             model_conf = 0.95
             anomaly_score = min(1.0, frp_ratio / 3.0) if frp_ratio > 1.0 else 0.1
-        
-            classification_class, classification, ndvi = await VegetationEngine.process_vegetation_hotspot(
-                lat=lat,
-                lon=lon,
-                frp=frp,
-                distance_to_forest_m=spatial_res.distance_to_forest_m,
-                distance_to_farmland_m=spatial_res.distance_to_farmland_m,
-                distance_to_mining_m=spatial_res.distance_to_mining_m,
-                distance_to_landfill_m=spatial_res.distance_to_landfill_m,
-                fast_mode=True
-            )
-            is_suppressed = False
-            is_critical_alarm = (frp > 100.0)
-            ndvi_pending = (ndvi is None)
-            model_conf = 0.90
-            # Compute real 30-day cluster persistence_days from DB history
-            _, _, _, _, _, persistence_days, _ = SuppressionEngine.evaluate(
-                lat=lat, lon=lon, current_frp=frp,
-                nearest_refinery_id=spatial_res.nearest_refinery_id,
-                detected_at=detected_at, db=db
-            )
-            # Compute real Isolation Forest anomaly score
-            anomaly_score = classifier_service.compute_anomaly_score(brightness, frp, persistence_days)
-        
         else:
-            # Standard Dual-Model Inference & Scoring
+            # Standard Dual-Model Inference & Scoring for Non-Refinery Zones
             is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
                 SuppressionEngine.evaluate(
                     lat=lat,
@@ -275,9 +298,18 @@ class FIRMSFetcher:
                     db=db
                 )
             )
-            flame_temp_k = 1650.0 if (firms_type in [2, 3] or spatial_res.distance_to_refinery_m <= 5000.0) else 950.0
-            footprint_sqm = 35.0 if (firms_type in [2, 3] or spatial_res.distance_to_refinery_m <= 5000.0) else max(100.0, round(frp * 24.5))
-            ambient_humidity = 40.0 + float(int(abs(hash((lat, lon))) % 35))
+
+            # Gap 1: Trigger Sentinel-2 for unsuppressed fires outside refinery
+            if not is_suppressed and spatial_res.distance_to_refinery_m > 300.0:
+                try:
+                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+                    if s2_ndvi is not None:
+                        ndvi = s2_ndvi
+                        ndvi_pending = False
+                    else:
+                        ndvi_pending = is_pending
+                except Exception as s2_err:
+                    logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
 
             classification, model_conf, anomaly_score = classifier_service.predict(
                 brightness=brightness,
@@ -310,19 +342,22 @@ class FIRMSFetcher:
             else:
                 classification_class = "06"
 
+        # Gap 4: Priority Threat Score Calculation with Real Relative Humidity
         from app.services.scoring import calculate_priority_threat_score
         priority_score = calculate_priority_threat_score(
             frp=frp,
             anomaly_score=anomaly_score,
             pop_proximity_km=spatial_res.distance_to_population_m / 1000.0,
             facility_dist_km=spatial_res.distance_to_refinery_m / 1000.0,
-            relative_humidity=ambient_humidity,
+            relative_humidity=relative_humidity,
             classification_class=classification_class
         )
 
         if priority_score >= 80:
             is_critical_alarm = True
 
+        # Gap 5.4: Safety Net / Triage State (< 40% confidence)
+        initial_status = "unclassified_pending_review" if confidence < 40.0 else "new"
 
         # Step 5: Upsert into ActiveHotspot Table
         existing = db.query(ActiveHotspot).filter(
@@ -368,6 +403,13 @@ class FIRMSFetcher:
             hotspot.model_confidence = model_conf
             hotspot.is_suppressed = is_suppressed
             hotspot.nearest_refinery_id = refinery_id
+            hotspot.flame_temperature_k = flame_temp_k
+            hotspot.source_footprint_sqm = footprint_sqm
+            hotspot.relative_humidity = relative_humidity
+            hotspot.wind_speed_kmh = wind_speed_kmh
+            hotspot.wind_direction_deg = wind_direction_deg
+            if hotspot.status == "new" and confidence < 40.0:
+                hotspot.status = "unclassified_pending_review"
         else:
             hotspot = ActiveHotspot(
                 latitude=lat,
@@ -393,18 +435,24 @@ class FIRMSFetcher:
                 classification=classification,
                 model_confidence=model_conf,
                 is_suppressed=is_suppressed,
-                status="new",
+                flame_temperature_k=flame_temp_k,
+                source_footprint_sqm=footprint_sqm,
+                relative_humidity=relative_humidity,
+                wind_speed_kmh=wind_speed_kmh,
+                wind_direction_deg=wind_direction_deg,
+                status=initial_status,
                 nearest_refinery_id=refinery_id
             )
             db.add(hotspot)
 
-        try:
-            db.commit()
-            db.refresh(hotspot)
-        except Exception as commit_err:
-            db.rollback()
-            logger.error(f"Error committing hotspot record ({lat}, {lon}): {commit_err}")
-            return None
+        if commit:
+            try:
+                db.commit()
+                db.refresh(hotspot)
+            except Exception as commit_err:
+                db.rollback()
+                logger.error(f"Error committing hotspot record ({lat}, {lon}): {commit_err}")
+                return None
 
         # Auto-update SuppressionHistory baseline for nearest refinery if within 10km
         if spatial_res.nearest_refinery_id and spatial_res.distance_to_refinery_m <= 10000.0:

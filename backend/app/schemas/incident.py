@@ -28,7 +28,12 @@ class IncidentDTO(BaseModel):
     ndvi: Optional[float] = None
     ndviPending: bool = False
     sentinelVerified: bool = False
-    status: str = Field("new", description="new, reviewed, or resolved")
+    flameTemperatureK: Optional[float] = Field(950.0, description="Combustion flame temperature in Kelvin")
+    sourceFootprintSqm: Optional[float] = Field(50.0, description="Emitter combustion footprint in square meters")
+    relativeHumidity: Optional[float] = Field(50.0, description="Open-Meteo relative humidity percentage")
+    windSpeedKmh: Optional[float] = Field(10.0, description="Open-Meteo wind speed in km/h")
+    windDirectionDeg: Optional[float] = Field(0.0, description="Open-Meteo wind direction in degrees")
+    status: str = Field("new", description="new, reviewed, resolved, or unclassified_pending_review")
     nearestFacility: str = Field("Open Region", description="Nearest registered facility name")
     nearestRefineryName: Optional[str] = Field(None, description="Nearest registered refinery name")
     operator: str = Field("Unspecified", description="Operating authority name")

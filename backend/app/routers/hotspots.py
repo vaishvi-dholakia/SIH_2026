@@ -24,7 +24,7 @@ def get_realtime_hotspots(
     hide_suppressed: bool = Query(False, description="Hide suppressed operational flares"),
     min_frp: Optional[float] = Query(None, description="Filter minimum Fire Radiative Power (MW)"),
     category: Optional[str] = Query(None, description="Filter by classification label"),
-    limit: int = Query(500, ge=1, le=5000, description="Maximum hotspots limit"),
+    limit: int = Query(10000, ge=1, le=25000, description="Maximum hotspots limit"),
     db: Session = Depends(get_db)
 ):
     """

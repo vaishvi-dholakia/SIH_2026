@@ -64,24 +64,18 @@ def format_incident_object(h: ActiveHotspot, db: Session, refinery_map: Optional
     frp_val = round(h.frp, 1) if h.frp is not None else 0.0
     anom_val = round(h.anomaly_score, 2) if h.anomaly_score is not None else 0.1
 
-    # Read stored priority_score from DB or recompute & persist if missing/out of sync
-    computed_score = calculate_unified_hazard_score(
-        classification=classification,
-        frp=h.frp or 0.0,
-        distance_to_refinery_m=dist_ref,
-        distance_to_population_m=dist_pop,
-        anomaly_score=anom_val,
-        is_suppressed=bool(h.is_suppressed)
-    )
-    if h.priority_score is None or h.priority_score != computed_score:
-        h.priority_score = computed_score
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-        hazard_score = computed_score
-    else:
+    # Read stored priority_score from DB or compute in-memory if missing
+    if h.priority_score is not None:
         hazard_score = h.priority_score
+    else:
+        hazard_score = calculate_unified_hazard_score(
+            classification=classification,
+            frp=h.frp or 0.0,
+            distance_to_refinery_m=dist_ref,
+            distance_to_population_m=dist_pop,
+            anomaly_score=anom_val,
+            is_suppressed=bool(h.is_suppressed)
+        )
 
     # Authoritative Severity Label (0-39 Routine, 40-59 Medium, 60-79 High, 80-100 Critical)
     priority = get_severity_label(hazard_score)
@@ -143,6 +137,11 @@ def format_incident_object(h: ActiveHotspot, db: Session, refinery_map: Optional
         "dataSource": getattr(h, "data_source", None) or "NASA_FIRMS",
         "detectionCount": 1,
         "maxFrp": frp_val,
+        "flameTemperatureK": round(float(getattr(h, "flame_temperature_k", None) or (1650.0 if dist_ref <= 5000.0 else 950.0)), 1),
+        "sourceFootprintSqm": round(float(getattr(h, "source_footprint_sqm", None) or (35.0 if dist_ref <= 5000.0 else max(50.0, round(frp_val * 24.5)))), 1),
+        "relativeHumidity": round(float(getattr(h, "relative_humidity", None) or 50.0), 1),
+        "windSpeedKmh": round(float(getattr(h, "wind_speed_kmh", None) or 10.0), 1),
+        "windDirectionDeg": round(float(getattr(h, "wind_direction_deg", None) or 0.0), 1),
         "tier": tier,
         "tierLabel": tier_label,
         "subdistrict": geo.get("subdistrict"),
@@ -152,7 +151,7 @@ def format_incident_object(h: ActiveHotspot, db: Session, refinery_map: Optional
         "locationDisplay": loc_display
     }
 
-    return IncidentDTO(**dto).model_dump()
+    return dto
 
 
 def aggregate_incidents(formatted_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -211,27 +210,27 @@ def aggregate_incidents(formatted_list: List[Dict[str, Any]]) -> List[Dict[str, 
 @router.get("/dashboard/summary")
 def get_dashboard_summary(db: Session = Depends(get_db)):
     """Returns high-level summary KPI metrics dynamically from active database records."""
-    all_hotspots = db.query(ActiveHotspot).all()
+    from sqlalchemy import func
+    total_raw = db.query(func.count(ActiveHotspot.id)).scalar() or 0
+    raw_suppressed = db.query(func.count(ActiveHotspot.id)).filter(ActiveHotspot.is_suppressed == True).scalar() or 0
+    critical_count = db.query(func.count(ActiveHotspot.id)).filter(ActiveHotspot.priority_score >= 80, ActiveHotspot.is_suppressed == False).scalar() or 0
+    high_count = db.query(func.count(ActiveHotspot.id)).filter(ActiveHotspot.priority_score.between(60, 79), ActiveHotspot.is_suppressed == False).scalar() or 0
 
-    ref_ids = {h.nearest_refinery_id for h in all_hotspots if h.nearest_refinery_id}
-    refinery_map = {}
-    if ref_ids:
-        refineries = db.query(Refinery).filter(Refinery.id.in_(ref_ids)).all()
-        refinery_map = {r.id: r for r in refineries}
+    # Fast cluster count (master hotspots grouped by spatial grid & classification class)
+    grid_expr = func.round(ActiveHotspot.latitude, 2).concat("_").concat(
+        func.round(ActiveHotspot.longitude, 2)
+    ).concat("_").concat(ActiveHotspot.classification_class)
 
-    raw_formatted = [format_incident_object(h, db, refinery_map=refinery_map) for h in all_hotspots]
-    aggregated = aggregate_incidents(raw_formatted)
-
-    critical_count = sum(1 for item in aggregated if item["priority"] == "Critical")
-    high_count = sum(1 for item in aggregated if item["priority"] == "High")
-    suppressed_count = sum(1 for item in aggregated if item["isSuppressed"])
+    cluster_count = db.query(func.count(func.distinct(grid_expr))).scalar() or total_raw
+    suppressed_cluster_count = db.query(func.count(func.distinct(grid_expr))).filter(ActiveHotspot.is_suppressed == True).scalar() or 0
 
     return {
-        "totalHotspots": len(aggregated),
-        "totalRawDetections": len(all_hotspots),
+        "totalHotspots": cluster_count,
+        "totalRawDetections": total_raw,
         "highRisk": high_count,
         "critical": critical_count,
-        "suppressed": suppressed_count
+        "suppressed": suppressed_cluster_count,
+        "rawSuppressed": raw_suppressed
     }
 
 

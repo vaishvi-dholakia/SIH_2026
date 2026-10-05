@@ -77,16 +77,28 @@ def get_engine_and_session():
         except Exception as e:
             logger.warning(f"PostgreSQL connection failed: {e}")
             logger.info(f"Falling back to local SQLite database: {sqlite_url}")
-            engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+            engine = create_engine(sqlite_url, connect_args={"check_same_thread": False, "timeout": 30})
     else:
         logger.info(f"Using SQLite database: {sqlite_url}")
-        engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+        engine = create_engine(sqlite_url, connect_args={"check_same_thread": False, "timeout": 30})
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
 
 
 engine, SessionLocal = get_engine_and_session()
+
+from sqlalchemy import event
+if engine.name == "sqlite":
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+        except Exception:
+            pass
 
 def get_db():
     """FastAPI Dependency for database sessions."""

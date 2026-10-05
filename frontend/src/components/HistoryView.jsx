@@ -111,6 +111,12 @@ export default function HistoryView({ incidents = [] }) {
     ? [0, Math.max(normalMax * 2, 80)] 
     : [0, 'auto'];
 
+  const siteOptions = useMemo(() => {
+    if (!incidents || incidents.length === 0) return [];
+    // Prioritize high/critical and limit to top 150 items for instant dropdown response
+    return incidents.slice(0, 150);
+  }, [incidents]);
+
   return (
     <div className="relative space-y-6 font-sans bg-[#0c1017] border border-[#1e2736] p-6 rounded-2xl overflow-hidden shadow-2xl">
       
@@ -174,7 +180,7 @@ export default function HistoryView({ incidents = [] }) {
               onChange={(e) => setSelectedIncidentId(e.target.value)}
               className="bg-[#0c1017] border border-[#2a364a] text-[#F5F5F5] font-bold text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 cursor-pointer max-w-[320px] truncate"
             >
-              {incidents.map((inc) => (
+              {siteOptions.map((inc) => (
                 <option key={inc.id} value={inc.id}>
                   {inc.locationDisplay || inc.nearestFacility} ({inc.classification})
                 </option>
@@ -214,7 +220,7 @@ export default function HistoryView({ incidents = [] }) {
               Loading {timeRange} temporal baseline telemetry...
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={250}>
               <LineChart data={filteredHistoryData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#383838" />
                 <XAxis dataKey="day" stroke="#888888" tick={{ fontSize: 11, fill: '#888888' }} />

@@ -37,7 +37,16 @@ class ActiveHotspot(Base):
     model_confidence = Column(Float, default=0.0, nullable=False)
     is_suppressed = Column(Boolean, default=False, nullable=False, index=True)
     
-    # Status: new, reviewed, resolved
+    # NOAA VIIRS Nightfire (VNF) Physical Combustion Metrics
+    flame_temperature_k = Column(Float, nullable=True, default=950.0)
+    source_footprint_sqm = Column(Float, nullable=True, default=50.0)
+
+    # Open-Meteo Atmospheric Weather Metrics
+    relative_humidity = Column(Float, nullable=True, default=50.0)
+    wind_speed_kmh = Column(Float, nullable=True, default=10.0)
+    wind_direction_deg = Column(Float, nullable=True, default=0.0)
+
+    # Status: new, reviewed, resolved, unclassified_pending_review, suppressed
     status = Column(String(50), default="new", nullable=False, index=True)
     
     # Data source identifier: "NASA_FIRMS" or "SIMULATION"

@@ -123,8 +123,12 @@ def calculate_priority_threat_score(
     if cls in ["03", "04", "05", "06", "Forest Fire / Wildfire", "Agricultural / Stubble Burning", "Mining Area / Coal Mine Fire", "Urban / Landfill Fire"]:
         humidity_risk = 100.0 - max(0.0, min(100.0, float(relative_humidity or 50.0)))
         score = (frp_norm * 0.35) + (anom_norm * 0.20) + (pop_norm * 0.20) + (dist_norm * 0.10) + (humidity_risk * 0.15)
+    elif cls in ["01", "Potential Industrial Thermal Source", "Industrial Source"]:
+        # Class 01: Routine Operational Flaring strictly capped at 25 points per NTRO spec
+        base_score = (frp_norm * 0.40) + (anom_norm * 0.25) + (pop_norm * 0.20) + (dist_norm * 0.15)
+        score = min(25.0, base_score * 0.25)
     else:
-        # Classes 01 & 02 (Industrial Flares / Incidents - Humidity not included in scoring)
+        # Class 02: Industrial Emergency Incident (Scaled up to 100)
         score = (frp_norm * 0.40) + (anom_norm * 0.25) + (pop_norm * 0.20) + (dist_norm * 0.15)
 
     return int(max(0, min(100, round(score))))

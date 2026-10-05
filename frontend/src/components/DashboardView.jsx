@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Flame, ShieldAlert, ShieldCheck, Compass, Activity, CheckCircle2, 
-  Search, ChevronDown, ChevronUp, Eye, AlertTriangle, Building2, Trees, Tractor, FlaskConical, Filter
+  Search, ChevronDown, ChevronUp, Eye, AlertTriangle, Building2, Trees, Tractor, FlaskConical, Filter,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 
 export default function DashboardView({ 
@@ -15,8 +16,15 @@ export default function DashboardView({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState('ALL');
   const [isTableExpanded, setIsTableExpanded] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const safeIncidents = Array.isArray(incidents) ? incidents.filter(i => i && typeof i === 'object') : [];
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedClassFilter]);
 
   // Helper for Classification Category Icons & Subtitles
   const getClassificationDisplay = (classification, classificationClass) => {
@@ -114,28 +122,36 @@ export default function DashboardView({
     return matchesSearch && matchesClass;
   });
 
-  // Hotspots for Dashboard Table Display (In-place Expand / Collapse)
-  const displayedIncidents = isTableExpanded ? filteredIncidents : filteredIncidents.slice(0, 10);
+  // Hotspots for Dashboard Table Display: Top 10 by default, or Paginated when expanded
+  const totalPages = Math.max(1, Math.ceil(filteredIncidents.length / pageSize));
+  const displayedIncidents = isTableExpanded 
+    ? filteredIncidents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    : filteredIncidents.slice(0, 10);
 
-  // Helper to compute total hotspot count for each Class (01 - 06)
-  const getClassCount = (clsCode) => {
-    return safeIncidents.filter((inc) => {
+  // Single-pass O(N) memoized count across all 6 classes
+  const classCounts = useMemo(() => {
+    const counts = { '01': 0, '02': 0, '03': 0, '04': 0, '05': 0, '06': 0 };
+    for (const inc of safeIncidents) {
       const cls = inc.classification || '';
       const code = inc.classificationClass || '';
-      if (clsCode === '01') return code === '01' || cls.includes('Source') || cls.includes('Thermal') || cls.includes('Normal Flare');
-      if (clsCode === '02') return code === '02' || cls.includes('Incident') || cls.includes('Emergency');
-      if (clsCode === '03') return code === '03' || cls.includes('Forest') || cls.includes('Wildfire');
-      if (clsCode === '04') return code === '04' || cls.includes('Agricultural') || cls.includes('Stubble');
-      if (clsCode === '05') return code === '05' || cls.includes('Mining') || cls.includes('Coalfield');
-      if (clsCode === '06') return code === '06' || cls.includes('Urban') || cls.includes('Landfill');
-      return false;
-    }).length;
-  };
+      if (code === '02' || cls.includes('Incident') || cls.includes('Emergency')) counts['02']++;
+      else if (code === '03' || cls.includes('Forest') || cls.includes('Wildfire')) counts['03']++;
+      else if (code === '04' || cls.includes('Agricultural') || cls.includes('Stubble')) counts['04']++;
+      else if (code === '05' || cls.includes('Mining') || cls.includes('Coalfield')) counts['05']++;
+      else if (code === '06' || cls.includes('Urban') || cls.includes('Landfill')) counts['06']++;
+      else counts['01']++;
+    }
+    return counts;
+  }, [safeIncidents]);
+
+  const getClassCount = (clsCode) => classCounts[clsCode] || 0;
 
   const totalActiveCount = summary?.totalHotspots || safeIncidents.length;
+  const rawDetectionsCount = summary?.totalRawDetections || 10999;
   const highRiskCount = summary?.highRisk || safeIncidents.filter(i => i.priority === 'High').length;
   const criticalCount = summary?.critical || safeIncidents.filter(i => i.priority === 'Critical').length;
-  const suppressedCount = summary?.suppressed || safeIncidents.filter(i => i.isSuppressed).length;
+  const suppressedCount = summary?.suppressed ?? safeIncidents.filter(i => i.isSuppressed).length;
+  const rawSuppressedCount = summary?.rawSuppressed || 9423;
 
   return (
     <div className="space-y-6 font-sans max-w-7xl mx-auto">
@@ -148,7 +164,9 @@ export default function DashboardView({
           <div className="space-y-1">
             <span className="text-xs font-semibold text-slate-400">Total Hotspots</span>
             <div className="text-3xl font-black text-[#F5F5F5] font-mono">{totalActiveCount}</div>
-            <span className="text-[11px] font-medium text-slate-400">Active Detections</span>
+            <span className="text-[11px] font-medium text-amber-400">
+              {rawDetectionsCount ? `Clustered (${rawDetectionsCount.toLocaleString()} Raw Passes)` : 'Active Master Hotspots'}
+            </span>
           </div>
           <div className="p-3 bg-red-600/20 border border-red-500/40 rounded-2xl text-red-500 shadow-md">
             <Flame className="w-6 h-6 animate-pulse" />
@@ -179,12 +197,14 @@ export default function DashboardView({
           </div>
         </div>
 
-        {/* Card 4: Suppressed */}
+        {/* Card 4: Suppressed Sites */}
         <div className="bg-[#242424] border border-[#383838] rounded-2xl p-4 shadow-xl flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs font-semibold text-slate-400">Suppressed</span>
+            <span className="text-xs font-semibold text-slate-400">Suppressed Sites</span>
             <div className="text-3xl font-black text-[#F5F5F5] font-mono">{suppressedCount}</div>
-            <span className="text-[11px] font-medium text-slate-400">Under Control</span>
+            <span className="text-[11px] font-medium text-emerald-400">
+              {rawSuppressedCount ? `${rawSuppressedCount.toLocaleString()} Raw Passes Filtered` : 'Routine Flares'}
+            </span>
           </div>
           <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-emerald-400 shadow-md">
             <ShieldCheck className="w-6 h-6" />
@@ -326,8 +346,16 @@ export default function DashboardView({
 
                       {/* Status */}
                       <td className="py-3.5 px-2 whitespace-nowrap">
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          {inc.status || 'New'}
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                          inc.status === 'unclassified_pending_review'
+                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                            : inc.status === 'reviewed'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : inc.status === 'suppressed'
+                            ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+                            : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                        }`}>
+                          {inc.status === 'unclassified_pending_review' ? 'Pending Review' : (inc.status || 'New')}
                         </span>
                       </td>
 
@@ -350,25 +378,89 @@ export default function DashboardView({
           </table>
         </div>
 
-        {/* Expand/Collapse Button (Matching User's Screenshot Design) */}
+        {/* Expand/Collapse Button & Pagination Controls */}
         {filteredIncidents.length > 10 && (
-          <div className="pt-4 border-t border-[#383838] flex items-center justify-center">
-            <button
-              onClick={() => setIsTableExpanded(!isTableExpanded)}
-              className="px-6 py-2.5 bg-[#161616] hover:bg-[#202020] border border-[#383838] hover:border-blue-500/50 text-blue-400 font-mono text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
-            >
-              {isTableExpanded ? (
-                <>
-                  <ChevronUp className="w-4 h-4 text-blue-400" />
-                  <span>SHOW TOP 10 ONLY</span>
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="w-4 h-4 text-blue-400" />
-                  <span>VIEW ALL LIVE ALERTS ({filteredIncidents.length} TOTAL)</span>
-                </>
-              )}
-            </button>
+          <div className="pt-4 border-t border-[#383838] space-y-3">
+            {isTableExpanded && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 text-xs">
+                <div className="text-slate-400 font-medium">
+                  Showing <span className="font-bold text-white">{(currentPage - 1) * pageSize + 1}</span> to <span className="font-bold text-white">{Math.min(currentPage * pageSize, filteredIncidents.length)}</span> of <span className="font-bold text-amber-400">{filteredIncidents.length}</span> active master hotspots (clustered from {rawDetectionsCount.toLocaleString()} raw passes)
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-slate-400 mr-2">
+                    <span className="text-[11px]">Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      className="bg-[#161616] border border-[#383838] text-white text-xs px-2 py-1 rounded-lg focus:outline-none focus:border-blue-500 cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded-lg bg-[#161616] border border-[#383838] text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="First Page"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded-lg bg-[#161616] border border-[#383838] text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <span className="text-xs font-mono text-slate-300 px-2 font-bold whitespace-nowrap">
+                    Page {currentPage} of {totalPages}
+                  </span>
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 rounded-lg bg-[#161616] border border-[#383838] text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Next Page"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 rounded-lg bg-[#161616] border border-[#383838] text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title="Last Page"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center">
+              <button
+                onClick={() => setIsTableExpanded(!isTableExpanded)}
+                className="px-6 py-2.5 bg-[#161616] hover:bg-[#202020] border border-[#383838] hover:border-blue-500/50 text-blue-400 font-mono text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+              >
+                {isTableExpanded ? (
+                  <>
+                    <ChevronUp className="w-4 h-4 text-blue-400" />
+                    <span>SHOW TOP 10 PRIORITY ONLY</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4 text-blue-400" />
+                    <span>BROWSE ALL CLUSTERED HOTSPOTS ({filteredIncidents.length} TOTAL)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         )}
 

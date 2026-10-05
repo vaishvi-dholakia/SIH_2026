@@ -149,7 +149,7 @@ class DualModelClassifier:
         # High temperature (>1400K) + small footprint (<100m²) indicates industrial flare
         if flame_temperature_k >= 1450.0 or source_footprint_sqm <= 60.0:
             if firms_type in [2, 3] or distance_to_refinery_m <= 5000.0:
-                if persistence_days >= 10:
+                if persistence_days >= 15:
                     return "Potential Industrial Thermal Source", 0.92
                 elif frp > 80.0 or anomaly_score > 0.60 or persistence_days <= 2:
                     return "Potential Industrial Incident", 0.95
@@ -158,7 +158,7 @@ class DualModelClassifier:
 
         # 1. Industrial Zone (Refinery - OISD 5km Industrial Complex Buffer Standard OR NASA firms_type static land 2,3)
         if firms_type in [2, 3] or distance_to_refinery_m <= 5000.0:
-            if persistence_days >= 10:
+            if persistence_days >= 15:
                 return "Potential Industrial Thermal Source", 0.92
             elif frp > 80.0 or anomaly_score > 0.60 or persistence_days <= 2:
                 return "Potential Industrial Incident", 0.95

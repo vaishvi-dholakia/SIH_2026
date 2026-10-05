@@ -25,6 +25,11 @@ class HotspotBase(BaseModel):
     classification: str
     model_confidence: float = 0.0
     is_suppressed: bool = False
+    flame_temperature_k: Optional[float] = 950.0
+    source_footprint_sqm: Optional[float] = 50.0
+    relative_humidity: Optional[float] = 50.0
+    wind_speed_kmh: Optional[float] = 10.0
+    wind_direction_deg: Optional[float] = 0.0
     status: str = "new"
     nearest_refinery_id: Optional[int] = None
     nearest_refinery_name: Optional[str] = None
@@ -36,7 +41,7 @@ class HotspotOut(HotspotBase):
         from_attributes = True
 
 class HotspotStatusUpdate(BaseModel):
-    status: str = Field(..., example="reviewed", pattern="^(new|reviewed|suppressed|resolved)$")
+    status: str = Field(..., example="reviewed", pattern="^(new|reviewed|suppressed|resolved|unclassified_pending_review)$")
 
 class HotspotGeoJSONFeature(BaseModel):
     type: str = "Feature"

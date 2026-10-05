@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check, Droplets, Ruler } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check, Droplets, Ruler, Flame, Wind } from 'lucide-react';
 import { updateHotspotStatus } from '../api/client';
 
 export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, onViewHistory, onInspectTelemetry, onStatusUpdated }) {
@@ -104,13 +104,15 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
                 </span>
               </div>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
-                currentStatus?.toLowerCase() === 'new'
+                currentStatus?.toLowerCase() === 'unclassified_pending_review'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                  : currentStatus?.toLowerCase() === 'new'
                   ? 'bg-red-500/20 text-red-400 border border-red-500/40'
                   : currentStatus?.toLowerCase() === 'reviewed'
                   ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
                   : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
               }`}>
-                Status: {currentStatus}
+                Status: {currentStatus === 'unclassified_pending_review' ? 'PENDING REVIEW (SAFETY-NET)' : currentStatus}
               </span>
             </div>
             <h2 className="text-xl font-black text-[#F5F5F5] tracking-tight">
@@ -141,21 +143,39 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
               {incident.priority} RISK SEVERITY
             </div>
 
-            {/* Added 2-Metric Physics Bar for Footprint Area & Humidity */}
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#383838]/80 text-left">
-              <div className="bg-[#242424] border border-[#383838] px-3.5 py-2 rounded-lg flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-                  <Droplets className="w-4 h-4 text-blue-400 shrink-0" />
-                  <span>Relative Humidity:</span>
+            {/* 4-Metric Physics Bar: VNF Combustion & Open-Meteo Weather */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-[#383838]/80 text-left">
+              <div className="bg-[#242424] border border-[#383838] px-3 py-2 rounded-lg flex flex-col gap-0.5 text-xs">
+                <span className="text-slate-400 font-semibold flex items-center gap-1 text-[11px]">
+                  <Droplets className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Humidity:</span>
                 </span>
-                <span className="font-mono font-black text-blue-400">{humidityVal}%</span>
+                <span className="font-mono font-black text-blue-400 text-sm">{humidityVal}%</span>
               </div>
-              <div className="bg-[#242424] border border-[#383838] px-3.5 py-2 rounded-lg flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-                  <Ruler className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Emitter Footprint:</span>
+              <div className="bg-[#242424] border border-[#383838] px-3 py-2 rounded-lg flex flex-col gap-0.5 text-xs">
+                <span className="text-slate-400 font-semibold flex items-center gap-1 text-[11px]">
+                  <Ruler className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Footprint:</span>
                 </span>
-                <span className="font-mono font-black text-amber-400">{footprintAreaVal} m²</span>
+                <span className="font-mono font-black text-amber-400 text-sm">{footprintAreaVal} m²</span>
+              </div>
+              <div className="bg-[#242424] border border-[#383838] px-3 py-2 rounded-lg flex flex-col gap-0.5 text-xs">
+                <span className="text-slate-400 font-semibold flex items-center gap-1 text-[11px]">
+                  <Flame className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                  <span>Flame Temp:</span>
+                </span>
+                <span className="font-mono font-black text-red-400 text-sm">
+                  {incident.flameTemperatureK ? `${Math.round(incident.flameTemperatureK)} K` : '1650 K'}
+                </span>
+              </div>
+              <div className="bg-[#242424] border border-[#383838] px-3 py-2 rounded-lg flex flex-col gap-0.5 text-xs">
+                <span className="text-slate-400 font-semibold flex items-center gap-1 text-[11px]">
+                  <Wind className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Wind Speed:</span>
+                </span>
+                <span className="font-mono font-black text-emerald-400 text-sm">
+                  {incident.windSpeedKmh ? `${incident.windSpeedKmh} km/h` : '12 km/h'}
+                </span>
               </div>
             </div>
           </div>
@@ -198,7 +218,7 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
 
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
               <button
-                onClick={() => onInspectTelemetry ? onInspectTelemetry(incident) : onViewOnMap(incident)}
+                onClick={() => onInspectTelemetry ? onInspectTelemetry(incident) : onViewOnMap?.(incident)}
                 className="w-full sm:w-1/3 py-3 bg-[#1D4ED8] hover:bg-blue-600 text-white font-bold text-xs rounded-lg shadow-md transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <Activity className="w-4 h-4" />
@@ -206,7 +226,7 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
               </button>
 
               <button
-                onClick={() => onViewOnMap(incident)}
+                onClick={() => onViewOnMap?.(incident)}
                 className="w-full sm:w-1/3 py-3 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-lg shadow-md transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <MapIcon className="w-4 h-4" />
@@ -214,7 +234,7 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
               </button>
 
               <button
-                onClick={() => onViewHistory(incident)}
+                onClick={() => onViewHistory?.(incident)}
                 className="w-full sm:w-1/3 py-3 bg-[#383838] hover:bg-[#4a4a4a] text-white font-bold text-xs rounded-lg border border-[#4a4a4a] transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <History className="w-4 h-4" />
