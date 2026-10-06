@@ -77,11 +77,11 @@ async def websocket_alerts_endpoint(websocket: WebSocket):
         logger.warning(f"WebSocket connection error: {e}")
         ws_manager.disconnect(websocket)
 
-async def _run_backfill_task(limit: int):
+async def _run_backfill_task(limit: int, force: bool = False):
     """Background execution runner for backfill."""
     db = SessionLocal()
     try:
-        res = await HistoricalBackfillService.run_backfill(db, limit=limit)
+        res = await HistoricalBackfillService.run_backfill(db, limit=limit, force_override=force)
         logger.info(f"Background backfill finished: {res}")
         await ws_manager.broadcast({
             "type": "BACKFILL_COMPLETED",
@@ -96,14 +96,15 @@ async def _run_backfill_task(limit: int):
 async def trigger_historical_backfill(
     background_tasks: BackgroundTasks,
     limit: int = 500,
+    force: bool = False,
     db: Session = Depends(get_db)
 ):
     """
     Manually triggers authentic historical NASA FIRMS archive backfill.
     Runs asynchronously and updates ActiveHotspots and ML training baselines.
     """
-    background_tasks.add_task(_run_backfill_task, limit)
+    background_tasks.add_task(_run_backfill_task, limit, force)
     return {
         "status": "initiated",
-        "message": f"Historical NASA FIRMS backfill initiated in background (limit: {limit} records)."
+        "message": f"Historical NASA FIRMS backfill initiated in background (limit: {limit} records, force: {force})."
     }

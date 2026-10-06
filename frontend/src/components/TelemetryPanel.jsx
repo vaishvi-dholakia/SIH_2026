@@ -70,9 +70,11 @@ export default function TelemetryPanel({ selectedHotspot, onOpenExportPdf }) {
   const hasNdvi = h.ndvi !== null && h.ndvi !== undefined && !isNaN(Number(h.ndvi));
   const ndviVal = hasNdvi ? Number(h.ndvi) : null;
 
-  let ndviDisplay = 'Pending Pass';
-  let ndviText = 'Sentinel-2 satellite pass in-queue';
-  let ndviColor = 'text-amber-400 font-bold';
+  const isIndustrialOrHardscape = h.is_suppressed || h.isSuppressed || h.classification_class === '01' || h.classificationClass === '01' || h.classification_class === '05' || h.classification_class === '06';
+
+  let ndviDisplay = isIndustrialOrHardscape ? 'N/A' : 'Pending Pass';
+  let ndviText = isIndustrialOrHardscape ? 'Industrial Hardscape (Zero Biomass)' : 'Sentinel-2 satellite pass in-queue';
+  let ndviColor = isIndustrialOrHardscape ? 'text-slate-400 font-bold' : 'text-amber-400 font-bold';
 
   if (hasNdvi) {
     ndviDisplay = ndviVal.toFixed(3);

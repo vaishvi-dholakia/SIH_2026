@@ -27,7 +27,8 @@ export default function SettingsView({ onLogout }) {
     setStatusMsg('Executing NASA FIRMS historical archive backfill...');
     try {
       const res = await triggerBackfill(200);
-      setStatusMsg(`Ingested ${res.processed || 0} NASA FIRMS historical detections.`);
+      const processedCount = res?.details?.processed ?? res?.processed ?? 0;
+      setStatusMsg(`Ingested ${processedCount} NASA FIRMS historical detections (Models updated).`);
     } catch (e) {
       setStatusMsg('Error executing historical backfill.');
     } finally {

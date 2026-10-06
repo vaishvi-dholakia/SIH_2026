@@ -366,11 +366,32 @@ def get_incident_history(
     }
 
 @router.get("/incidents/{incident_id}/satellite")
-def get_incident_satellite(incident_id: int, db: Session = Depends(get_db)):
-    """Returns authentic Sentinel-2 multispectral verification status (no fake NDVI fallbacks)."""
+async def get_incident_satellite(
+    incident_id: int,
+    enrich: bool = Query(False, description="Trigger on-demand live Sentinel-2 MSI query if pending"),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns authentic Sentinel-2 multispectral verification status (no fake NDVI fallbacks).
+    Supports ?enrich=true to trigger an on-demand live query to Copernicus CDSE if pending.
+    """
+    from app.services.sentinel_ndvi import SentinelNDVIService
+
     h = db.query(ActiveHotspot).filter(ActiveHotspot.id == incident_id).first()
     if not h:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Incident #{incident_id} not found")
+
+    # If operator requested live on-demand query and NDVI is currently pending/null
+    if enrich and h.ndvi is None and h.classification_class not in ["01", "05", "06"]:
+        try:
+            s2_val, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(h.latitude, h.longitude, hotspot_id=h.id)
+            if s2_val is not None:
+                h.ndvi = s2_val
+                h.ndvi_pending = False
+                db.commit()
+                db.refresh(h)
+        except Exception as err:
+            logger.warning(f"On-demand Sentinel-2 enrichment error for incident #{incident_id}: {err}")
 
     inc = format_incident_object(h, db)
     has_sentinel = inc["ndvi"] is not None
@@ -382,21 +403,35 @@ def get_incident_satellite(incident_id: int, db: Session = Depends(get_db)):
             "ndvi": inc["ndvi"],
             "swirAvailable": True,
             "acquisitionTimestamp": inc["detectedAt"],
-            "sensor": "Sentinel-2 MSI L2A",
+            "sensor": "Sentinel-2 MSI L2A (Copernicus)",
             "bands": ["B04 (Red)", "B08 (NIR)", "B11 (SWIR-1)", "B12 (SWIR-2)"],
-            "landCover": "Non-vegetated Industrial Hardscape" if inc["ndvi"] < 0.25 else "Biomass Canopy",
-            "evidenceSummary": "Sentinel-2 short-wave infrared (SWIR-2) confirms localized thermal emission."
+            "landCover": "Dense Forest Canopy (>0.45)" if inc["ndvi"] > 0.45 else "Agricultural Crop Canopy (0.10 - 0.45)" if inc["ndvi"] >= 0.10 else "Non-vegetated Ground (<0.10)",
+            "evidenceSummary": f"Copernicus Sentinel-2 MSI verified real pixel NDVI: {inc['ndvi']:.4f} across target coordinates."
         }
     else:
+        # Provide scientifically truthful reasons for NDVI=null per NTRO specification
+        if h.classification_class == "01" or h.is_suppressed:
+            land_cover_desc = "Industrial Refinery Hardscape (N/A)"
+            evidence_desc = "NDVI is scientifically not applicable on industrial flare stacks. Zero vegetation biomass present."
+        elif h.classification_class == "05":
+            land_cover_desc = "Open-Cast Coal Mining Area (N/A)"
+            evidence_desc = "NDVI is not applicable on active coalfield extraction and hardscape terrain."
+        elif h.classification_class == "06":
+            land_cover_desc = "Urban Waste / Landfill Hardscape (N/A)"
+            evidence_desc = "NDVI is not applicable on urban landfill and municipal solid waste terrain."
+        else:
+            land_cover_desc = "Pending Satellite Pass (5-Day Orbit Window)"
+            evidence_desc = "Awaiting clear-sky Copernicus Sentinel-2 MSI overpass across this coordinate."
+
         return {
             "incidentId": incident_id,
             "sentinel2Available": False,
             "ndvi": None,
             "swirAvailable": False,
             "acquisitionTimestamp": None,
-            "sensor": "Sentinel-2 MSI L2A",
+            "sensor": "Sentinel-2 MSI L2A (Copernicus)",
             "bands": [],
-            "landCover": "Pending Satellite Pass",
-            "evidenceSummary": "Sentinel-2 multispectral evidence unavailable for this timestamp. Awaiting satellite overpass."
+            "landCover": land_cover_desc,
+            "evidenceSummary": evidence_desc
         }
 

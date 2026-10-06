@@ -157,9 +157,9 @@ export const fetchIncidentHistory = async (id, days = 90) => {
   }
 };
 
-export const fetchIncidentSatellite = async (id) => {
+export const fetchIncidentSatellite = async (id, enrich = false) => {
   try {
-    const response = await apiClient.get(`/api/incidents/${id}/satellite`);
+    const response = await apiClient.get(`/api/incidents/${id}/satellite`, { params: { enrich } });
     return response.data;
   } catch (e) {
     return null;
@@ -194,9 +194,23 @@ export const updateHotspotStatus = async (id, status) => {
   return response.data;
 };
 
-export const triggerBackfill = async (limit = 500) => {
-  const response = await apiClient.post('/api/admin/backfill', null, { params: { limit } });
-  return response.data;
+export const triggerBackfill = async (limit = 500, force = false) => {
+  try {
+    const response = await apiClient.post('/api/system/backfill', null, { params: { limit, force } });
+    return response.data;
+  } catch (e) {
+    const response = await apiClient.post('/api/admin/backfill', null, { params: { limit, force } });
+    return response.data;
+  }
+};
+
+export const fetchTemporalStatus = async () => {
+  try {
+    const response = await apiClient.get('/api/system/temporal-status');
+    return response.data;
+  } catch (e) {
+    return null;
+  }
 };
 
 export const syncOsmData = async () => {

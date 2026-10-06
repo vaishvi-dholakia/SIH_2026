@@ -7,12 +7,15 @@ logger = logging.getLogger("geoscd.vegetation_engine")
 
 class VegetationEngine:
     """
-    Module 4: Vegetation & Landcover Processing Engine for NASA FIRMS Type 0 Detections.
-    Routes Presumed Vegetation hotspots into:
-    - Class 03: Forest Fire (NDVI > 0.45 in Forest landcover)
-    - Class 04: Agricultural Fire (NDVI 0.10 - 0.35 in Farmland)
-    - Class 05: Mining Fire (Mine landcover, default NDVI = 0.05)
-    - Class 06: Urban / Landfill Fire (Residential/Waste landcover, default NDVI = 0.02)
+    Module 4: Vegetation & Landcover Processing Engine for Non-Refinery Detections.
+    Strictly follows the GEO-SCD Flowchart:
+    1. Evaluates OpenStreetMap Landcover Polygons & Geofences first.
+    2. Non-vegetation Hardscapes (Mines, Landfills, Industrial) -> Class 05 / 06 (ndvi=None, pending=False, Zero API Quota Waste).
+    3. True Vegetation Zones (Forest, Farmland) -> Triggers Copernicus Sentinel-2 MSI!
+       - NDVI > 0.45       ➔ Class 03 (Forest Fire / Wildfire)
+       - NDVI 0.10 - 0.45  ➔ Class 04 (Agricultural / Stubble Burning)
+    4. Sub-Pixel Geodetic Extraction: Employs 0.02-degree spatial grid cache to assign unique 10-meter pixel NDVI
+       without duplicate network round-trips.
     """
 
     @classmethod
@@ -26,61 +29,64 @@ class VegetationEngine:
         distance_to_mining_m: float = 999999.0,
         distance_to_landfill_m: float = 999999.0,
         fast_mode: bool = True
-    ) -> Tuple[str, str, Optional[float]]:
+    ) -> Tuple[str, str, Optional[float], bool]:
         """
-        Processes a Type 0 hotspot with optional fast_mode (uses local spatial geofence distances).
-        When fast_mode=True, avoids synchronous HTTP requests to Copernicus during batch ingestion.
+        Processes a non-refinery hotspot through the landcover and spectral decision tree.
         Returns:
-            (classification_class, classification_label, ndvi_value)
+            (classification_class, classification_label, ndvi_value, ndvi_pending)
         """
-        if fast_mode:
-            if distance_to_forest_m <= 3000.0:
-                return "03", "Forest Fire / Wildfire", None
-            elif distance_to_farmland_m <= 3000.0:
-                return "04", "Agricultural / Stubble Burning", None
-            elif distance_to_mining_m <= 3000.0:
-                return "05", "Mining Area / Coal Mine Fire", 0.05
-            elif distance_to_landfill_m <= 3000.0:
-                return "06", "Urban / Landfill Fire", 0.02
-            else:
-                return "03", "Forest Fire / Wildfire", None
+        # Step 1: Identify Non-vegetation Hardscapes (Zero-Dummy: ndvi=None, ndvi_pending=False)
+        if distance_to_mining_m <= 15000.0:
+            return "05", "Mining Area / Coal Mine Fire", None, False
 
+        if distance_to_landfill_m <= 6000.0:
+            return "06", "Urban / Landfill Fire", None, False
+
+        # Step 2: True Vegetation Zones (Forest & Farmland)
+        # Check if the grid raster is already pre-fetched in the Spatial Grid Cache
+        if SentinelNDVIService.has_cached_grid(lat, lon):
+            s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+            if s2_ndvi is not None:
+                if s2_ndvi > 0.45:
+                    return "03", "Forest Fire / Wildfire", s2_ndvi, False
+                else:
+                    return "04", "Agricultural / Stubble Burning", s2_ndvi, False
+
+        # Step 3: Handle Uncached Detections based on Ingestion Mode
+        if fast_mode:
+            # Fast mode fallback when grid is not pre-cached
+            if distance_to_forest_m <= 25000.0 and distance_to_forest_m <= distance_to_farmland_m:
+                return "03", "Forest Fire / Wildfire", None, True
+            else:
+                return "04", "Agricultural / Stubble Burning", None, True
+
+        # Live Mode: Query Live OSM and Fetch Sentinel-2 On-Demand
         try:
-            # 1. Query OpenStreetMap for landcover classification at coordinate
             osm_landcover = OSMFetcher.query_osm_landcover(lat, lon)
         except Exception as e:
-            logger.warning(f"OSM landcover query failed for ({lat}, {lon}): {e}. Using default fallback.")
+            logger.warning(f"OSM landcover query failed for ({lat}, {lon}): {e}. Using distance fallback.")
             osm_landcover = "unknown"
 
-        if osm_landcover == "forest":
-            ndvi_val = await SentinelNDVIService.fetch_sentinel2_ndvi(lat, lon)
-            if ndvi_val is not None and ndvi_val > 0.45:
-                return "03", "Forest Fire / Wildfire", ndvi_val
-            elif ndvi_val is not None:
-                return "04", "Agricultural / Stubble Burning", ndvi_val
+        if osm_landcover == "mine":
+            return "05", "Mining Area / Coal Mine Fire", None, False
+        if osm_landcover in ["residential", "waste_disposal", "industrial"]:
+            return "06", "Urban / Landfill Fire", None, False
+
+        s2_ndvi = None
+        is_pending = True
+        try:
+            s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
+        except Exception as s2_err:
+            logger.debug(f"Sentinel-2 call for ({lat}, {lon}) deferred: {s2_err}")
+
+        if s2_ndvi is not None:
+            if s2_ndvi > 0.45:
+                return "03", "Forest Fire / Wildfire", s2_ndvi, False
             else:
-                return "03", "Forest Fire / Wildfire", None
+                return "04", "Agricultural / Stubble Burning", s2_ndvi, False
 
-        elif osm_landcover == "farmland":
-            ndvi_val = await SentinelNDVIService.fetch_sentinel2_ndvi(lat, lon)
-            if ndvi_val is not None and 0.10 <= ndvi_val <= 0.35:
-                return "04", "Agricultural / Stubble Burning", ndvi_val
-            elif ndvi_val is not None and ndvi_val > 0.35:
-                return "03", "Forest Fire / Wildfire", ndvi_val
-            else:
-                return "04", "Agricultural / Stubble Burning", None
-
-        elif osm_landcover == "mine":
-            return "05", "Mining Area / Coal Mine Fire", 0.05
-
-        elif osm_landcover in ["residential", "waste_disposal", "industrial"]:
-            return "06", "Urban / Landfill Fire", 0.02
-
+        # If satellite pass is pending or cloudy, use spatial distance as physical prior
+        if distance_to_forest_m <= 25000.0 and distance_to_forest_m <= distance_to_farmland_m:
+            return "03", "Forest Fire / Wildfire", None, is_pending
         else:
-            ndvi_val = await SentinelNDVIService.fetch_sentinel2_ndvi(lat, lon)
-            if ndvi_val is not None:
-                if ndvi_val > 0.40:
-                    return "03", "Forest Fire / Wildfire", ndvi_val
-                else:
-                    return "04", "Agricultural / Stubble Burning", ndvi_val
-            return "03", "Forest Fire / Wildfire", None
+            return "04", "Agricultural / Stubble Burning", None, is_pending

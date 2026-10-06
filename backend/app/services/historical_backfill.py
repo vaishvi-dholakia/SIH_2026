@@ -12,6 +12,7 @@ from app.models.hotspot import ActiveHotspot
 from app.models.suppression import SuppressionHistory
 from app.models.refinery import Refinery
 from app.services.firms_fetcher import FIRMSFetcher
+from app.services.sentinel_ndvi import SentinelNDVIService
 from app.ml.classifier import classifier_service
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -89,20 +90,20 @@ class HistoricalBackfillService:
         return sorted_records
 
     @classmethod
-    async def run_backfill(cls, db: Session, limit: int = 20000) -> Dict[str, Any]:
+    async def run_backfill(cls, db: Session, limit: int = 1000, force_override: bool = False) -> Dict[str, Any]:
         """
         Runs historical detections chronologically through the full pipeline:
-        Spatial Analysis -> Suppression -> Conditional NDVI -> Dual ML -> Batch Upsert
-        Ensures >= 10,000 active database records.
+        Spatial Analysis -> Suppression -> Spatial Grid NDVI -> Dual ML -> Batch Upsert
+        Ensures persistent historical baselines and authentic 10-meter sub-pixel NDVI.
         """
-        logger.info("Starting authentic NASA FIRMS historical backfill...")
+        logger.info(f"Starting authentic NASA FIRMS historical backfill (limit={limit}, force_override={force_override})...")
         records = await cls.fetch_historical_archive(days=settings.HISTORICAL_DAYS_RANGE)
 
         from app.services.spatial_analyser import SpatialAnalyser
         geofence_cache = SpatialAnalyser.get_cached_geofences(db)
 
         # Complement with 60-day historical flaring baseline overpasses for India's 19 registered refineries
-        # to ensure the database contains >= 10,000 persistent historical entries
+        # to ensure the database contains persistent historical entries
         refineries = db.query(Refinery).all()
         refinery_records = []
         if refineries:
@@ -146,24 +147,36 @@ class HistoricalBackfillService:
         for r in combined_records:
             dt = r["detected_at"]
             dt_key = dt.strftime("%Y-%m-%d %H:%M") if hasattr(dt, "strftime") else str(dt)[:16]
-            if (round(r["latitude"], 4), round(r["longitude"], 4), dt_key) not in existing_keys:
+            if force_override or (round(r["latitude"], 4), round(r["longitude"], 4), dt_key) not in existing_keys:
                 new_records.append(r)
 
-        logger.info(f"Existing DB records: {len(existing_rows)}, New records to ingest: {len(new_records)}")
+        logger.info(f"Existing DB records: {len(existing_rows)}, Records to process: {len(new_records)} (force_override={force_override})")
         selected_records = new_records[:limit] if limit else new_records
         processed_count = 0
 
-        # Batch ingestion with commit every 500 records for maximum performance
+        # Pre-fetch authentic Copernicus Sentinel-2 rasters for candidate vegetation coordinates
+        veg_coords = [
+            (r["latitude"], r["longitude"]) for r in selected_records 
+            if r.get("firms_type", 0) not in [2, 3]
+        ]
+        if veg_coords:
+            logger.info(
+                f"[SPATIAL CLUSTERING] Pre-fetching authentic Copernicus Sentinel-2 rasters for "
+                f"{len(veg_coords)} vegetation candidates across India..."
+            )
+            await SentinelNDVIService.prefetch_spatial_grids(veg_coords)
+
+        # Batch ingestion with commit every 200 records for maximum performance & live progress
         for i, r in enumerate(selected_records):
             try:
                 await FIRMSFetcher.process_and_ingest_hotspot(
                     r, db, ws_broadcast_callback=None, geofence_cache=geofence_cache, commit=False, fast_mode=True
                 )
                 processed_count += 1
-                if processed_count % 500 == 0:
+                if processed_count % 200 == 0:
                     try:
                         db.commit()
-                        logger.info(f"Committed batch of 500 hotspots ({processed_count}/{len(selected_records)})...")
+                        logger.info(f"Committed batch of 200 hotspots ({processed_count}/{len(selected_records)})...")
                     except Exception as commit_err:
                         db.rollback()
                         logger.warning(f"Batch commit warning: {commit_err}")

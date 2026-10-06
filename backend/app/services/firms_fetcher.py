@@ -294,7 +294,7 @@ class FIRMSFetcher:
             model_conf = 0.95
             anomaly_score = min(1.0, frp_ratio / 3.0) if frp_ratio > 1.0 else 0.1
         else:
-            # Standard Dual-Model Inference & Scoring for Non-Refinery Zones
+            # Flowchart Step 2 (Branch B): Non-Refinery Zones
             is_suppressed, is_critical_alarm, hist_baseline_frp, frp_ratio, frp_change_pct, persistence_days, suppression_reason = (
                 SuppressionEngine.evaluate(
                     lat=lat,
@@ -306,48 +306,28 @@ class FIRMSFetcher:
                 )
             )
 
-            # Gap 1: Trigger Sentinel-2 for unsuppressed fires outside refinery
-            if not fast_mode and not is_suppressed and spatial_res.distance_to_refinery_m > 300.0:
-                try:
-                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
-                    if s2_ndvi is not None:
-                        ndvi = s2_ndvi
-                        ndvi_pending = False
-                    else:
-                        ndvi_pending = is_pending
-                except Exception as s2_err:
-                    logger.debug(f"Sentinel-2 on-demand trigger: {s2_err}")
-
-            classification, model_conf, anomaly_score = classifier_service.predict(
-                brightness=brightness,
+            # Route through VegetationEngine to enforce OSM Landcover Check first (Flowchart Compliance)
+            classification_class, classification, veg_ndvi, is_veg_pending = await VegetationEngine.process_vegetation_hotspot(
+                lat=lat,
+                lon=lon,
                 frp=frp,
-                confidence=confidence,
-                distance_to_refinery_m=spatial_res.distance_to_refinery_m,
-                distance_to_population_m=spatial_res.distance_to_population_m,
                 distance_to_forest_m=spatial_res.distance_to_forest_m,
                 distance_to_farmland_m=spatial_res.distance_to_farmland_m,
                 distance_to_mining_m=spatial_res.distance_to_mining_m,
                 distance_to_landfill_m=spatial_res.distance_to_landfill_m,
-                persistence_days=persistence_days,
-                ndvi=ndvi,
-                is_suppressed=is_suppressed,
-                db=db,
-                firms_type=firms_type,
-                flame_temperature_k=flame_temp_k,
-                source_footprint_sqm=footprint_sqm
+                fast_mode=fast_mode
             )
-            if "Incident" in classification:
-                classification_class = "02"
-            elif "Thermal Source" in classification or "Industrial" in classification:
-                classification_class = "01"
-            elif "Forest" in classification:
-                classification_class = "03"
-            elif "Agricultural" in classification:
-                classification_class = "04"
-            elif "Mining" in classification:
-                classification_class = "05"
+
+            if veg_ndvi is not None:
+                ndvi = veg_ndvi
+                ndvi_pending = False
             else:
-                classification_class = "06"
+                ndvi = None
+                ndvi_pending = is_veg_pending
+
+            # Dual ML Anomaly scoring & confidence
+            anomaly_score = classifier_service.compute_anomaly_score(brightness, frp, persistence_days)
+            model_conf = 0.92 if ndvi is not None else 0.85
 
         # Gap 4: Priority Threat Score Calculation with Real Relative Humidity
         from app.services.scoring import calculate_priority_threat_score

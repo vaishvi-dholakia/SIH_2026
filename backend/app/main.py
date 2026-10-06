@@ -78,22 +78,60 @@ async def ensure_live_osm_data():
             logger.info("No infrastructure in database. Initiating live OpenStreetMap fetch...")
             await OSMFetcher.sync_all_from_osm(db)
 
-        hotspot_count = db.query(ActiveHotspot).count()
-        latest_record = db.query(ActiveHotspot).order_by(ActiveHotspot.detected_at.desc()).first()
+        # Layer 1: Temporal Depth Validator (Intelligent Cold Start Detection)
+        from sqlalchemy import func
+        stats = db.query(
+            func.count(ActiveHotspot.id).label("total_rows"),
+            func.count(func.distinct(func.date(ActiveHotspot.detected_at))).label("distinct_days"),
+            func.min(ActiveHotspot.detected_at).label("oldest_record"),
+            func.max(ActiveHotspot.detected_at).label("latest_record")
+        ).first()
+
+        total_rows = (stats.total_rows if stats else 0) or 0
+        distinct_days = (stats.distinct_days if stats else 0) or 0
+        oldest_record = stats.oldest_record if stats else None
+        latest_record = stats.latest_record if stats else None
+
         is_stale = False
-        if latest_record and latest_record.detected_at:
-            from datetime import timedelta
-            rec_dt = latest_record.detected_at
+        date_span_days = 0
+
+        if latest_record:
+            rec_dt = latest_record
             if rec_dt.tzinfo is None:
                 rec_dt = rec_dt.replace(tzinfo=timezone.utc)
+            from datetime import timedelta
             age = datetime.now(timezone.utc) - rec_dt
             if age > timedelta(hours=24):
                 is_stale = True
 
-        if hotspot_count == 0 or is_stale:
-            logger.info("Ingesting/updating past 30-day thermal detections from NASA FIRMS archive...")
+        if latest_record and oldest_record:
+            rec_max = latest_record if latest_record.tzinfo else latest_record.replace(tzinfo=timezone.utc)
+            rec_min = oldest_record if oldest_record.tzinfo else oldest_record.replace(tzinfo=timezone.utc)
+            date_span_days = max(0, (rec_max - rec_min).days)
+
+        # Condition for Triggering Automatic Backfill:
+        # 1. Total rows < 100 OR
+        # 2. Distinct calendar days < 20 OR
+        # 3. Date span < 25 days OR
+        # 4. Latest record is stale (>24h old)
+        insufficient_depth = (total_rows < 100) or (distinct_days < 20) or (date_span_days < 25)
+
+        if insufficient_depth or is_stale:
+            trigger_reasons = []
+            if total_rows < 100:
+                trigger_reasons.append(f"total rows low ({total_rows} < 100)")
+            if distinct_days < 20:
+                trigger_reasons.append(f"temporal depth insufficient ({distinct_days} distinct days < 20)")
+            if date_span_days < 25:
+                trigger_reasons.append(f"date span too narrow ({date_span_days} days < 25)")
+            if is_stale:
+                trigger_reasons.append("latest telemetry >24h stale")
+
+            logger.info(
+                f"[COLD START] Temporal depth validation triggered NASA 60-day backfill: {', '.join(trigger_reasons)}."
+            )
             from app.services.historical_backfill import HistoricalBackfillService
-            await HistoricalBackfillService.run_backfill(db, limit=15000)
+            await HistoricalBackfillService.run_backfill(db, limit=1000, force_override=False)
 
             # If NASA open feed returned no current fires, seed initial representative hotspots across India
             if db.query(ActiveHotspot).count() == 0:
@@ -110,6 +148,10 @@ async def ensure_live_osm_data():
                 ]
                 for raw in sample_fires:
                     await FIRMSFetcher.process_and_ingest_hotspot(raw, db)
+        else:
+            logger.info(
+                f"[COLD START] Temporal depth check PASSED ({total_rows} rows across {distinct_days} distinct days, span={date_span_days}d). Historical baselines intact."
+            )
     except Exception as e:
         logger.error(f"Error checking/syncing live data: {e}")
     finally:
@@ -132,6 +174,43 @@ async def periodic_firms_ingestion():
                     logger.info("Executing periodic NASA FIRMS live polling cycle...")
                     await FIRMSFetcher.run_live_ingestion_cycle(db, ws_broadcast_callback=ws_manager.broadcast)
                     seconds_since_last_poll = 0
+
+                    # Targeted Background Enrichment: Enrich top unsuppressed active emergency hotspots with real Sentinel-2 NDVI
+                    try:
+                        pending_emergencies = db.query(ActiveHotspot).filter(
+                            ActiveHotspot.is_suppressed == False,
+                            ActiveHotspot.ndvi_pending == True,
+                            ActiveHotspot.ndvi.is_(None),
+                            ActiveHotspot.classification_class.in_(["02", "03", "04"])
+                        ).order_by(ActiveHotspot.priority_score.desc()).limit(5).all()
+
+                        if pending_emergencies:
+                            from app.services.sentinel_ndvi import SentinelNDVIService
+                            for em in pending_emergencies:
+                                try:
+                                    s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(em.latitude, em.longitude, hotspot_id=em.id)
+                                    if s2_ndvi is not None:
+                                        em.ndvi = s2_ndvi
+                                        em.ndvi_pending = False
+                                        db.commit()
+                                        logger.info(f"[ENRICHER] Enriched active incident #{em.id} with verified Sentinel-2 NDVI: {s2_ndvi}")
+                                        await ws_manager.broadcast({
+                                            "type": "HOTSPOT_ENRICHED",
+                                            "id": em.id,
+                                            "latitude": em.latitude,
+                                            "longitude": em.longitude,
+                                            "ndvi": em.ndvi,
+                                            "classification": em.classification,
+                                            "classification_class": em.classification_class,
+                                            "priority_score": em.priority_score
+                                        })
+                                    else:
+                                        em.ndvi_pending = is_pending
+                                    await asyncio.sleep(0.5)
+                                except Exception as enrich_err:
+                                    logger.debug(f"[ENRICHER] Skipped hotspot #{em.id}: {enrich_err}")
+                    except Exception as bg_err:
+                        logger.debug(f"[ENRICHER] Background enrichment loop note: {bg_err}")
 
                 # Push real-time telemetry pulse to all connected frontend clients
                 total_hs = db.query(ActiveHotspot).count()

@@ -205,7 +205,7 @@ export default function HotspotTriageTable({ hotspots = [], onSelectHotspot, onS
                         <div className="text-[9px] text-tactical-gray flex items-center gap-1.5 mt-0.5">
                           <span>Confidence: {((h.model_confidence || 0.8) * 100).toFixed(0)}%</span>
                           <span>•</span>
-                          <span>NDVI: {h.ndvi !== null && h.ndvi !== undefined ? h.ndvi : '0.14'}</span>
+                          <span>NDVI: {h.ndvi !== null && h.ndvi !== undefined ? Number(h.ndvi).toFixed(3) : (h.is_suppressed || h.classification_class === '01' ? 'N/A' : 'Pending')}</span>
                         </div>
                       </td>
 

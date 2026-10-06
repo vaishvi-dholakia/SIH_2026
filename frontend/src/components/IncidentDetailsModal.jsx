@@ -1,12 +1,35 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check, Droplets, Ruler, Flame, Wind } from 'lucide-react';
-import { updateHotspotStatus } from '../api/client';
+import { X, CheckCircle2, AlertTriangle, History, ShieldAlert, Map as MapIcon, Activity, Check, Droplets, Ruler, Flame, Wind, Satellite, RefreshCw, Sparkles } from 'lucide-react';
+import { updateHotspotStatus, fetchIncidentSatellite } from '../api/client';
 
 export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, onViewHistory, onInspectTelemetry, onStatusUpdated }) {
   if (!incident) return null;
 
   const [currentStatus, setCurrentStatus] = useState(incident.status || 'new');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [satelliteData, setSatelliteData] = useState(null);
+  const [isFetchingSat, setIsFetchingSat] = useState(false);
+  const [satMsg, setSatMsg] = useState('');
+
+  const handleFetchLiveSatellite = async () => {
+    setIsFetchingSat(true);
+    setSatMsg('Querying Copernicus CDSE Sentinel-2 MSI L2A archive...');
+    try {
+      const data = await fetchIncidentSatellite(incident.id, true);
+      if (data) {
+        setSatelliteData(data);
+        if (data.sentinel2Available && data.ndvi !== null) {
+          setSatMsg(`Verified real Sentinel-2 NDVI: ${Number(data.ndvi).toFixed(4)}!`);
+        } else {
+          setSatMsg(data.evidenceSummary || 'Satellite pass pending or cloud cover >30%.');
+        }
+      }
+    } catch (e) {
+      setSatMsg('Copernicus CDSE API connection timed out.');
+    } finally {
+      setIsFetchingSat(false);
+    }
+  };
 
   const handleMarkReviewed = async () => {
     setIsUpdating(true);
@@ -88,6 +111,16 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
   if (!reasons.some(r => r.includes('Footprint'))) {
     reasons.push(`Measured Emitter Footprint Area: ${footprintAreaVal} m² (${footprintAreaVal < 50 ? 'Concentrated Point-Source Emitter' : 'Widespread Combustion Area'})`);
   }
+
+  const isHardscape = incident.classificationClass === '01' || incident.isSuppressed || incident.classificationClass === '05' || incident.classificationClass === '06' || incident.classification?.includes('Industrial Thermal Source') || incident.classification?.includes('Mining') || incident.classification?.includes('Landfill');
+  const effectiveNdvi = satelliteData?.ndvi ?? incident.ndvi;
+  const effectiveLandcover = satelliteData?.landCover || (
+    isHardscape
+      ? (incident.classificationClass === '01' ? 'Industrial Flare Stack (Zero Biomass)' : incident.classificationClass === '05' ? 'Open-Cast Coal Mining Area' : 'Urban Landfill Site')
+      : effectiveNdvi
+      ? (effectiveNdvi > 0.45 ? 'Dense Forest Canopy (>0.45)' : 'Agricultural Crop Canopy (0.10 - 0.45)')
+      : 'Awaiting Copernicus Sentinel-2 MSI Overpass'
+  );
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
@@ -195,6 +228,48 @@ export default function IncidentDetailsModal({ incident, onClose, onViewOnMap, o
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Copernicus Sentinel-2 Optical MSI Intelligence Card */}
+          <div className="bg-[#161616] border border-[#383838] p-5 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <Satellite className="w-4 h-4 text-cyan-400" />
+                <span>Copernicus Sentinel-2 MSI Optical Intelligence</span>
+              </h3>
+              {(!effectiveNdvi && !isHardscape) && (
+                <button
+                  onClick={handleFetchLiveSatellite}
+                  disabled={isFetchingSat}
+                  className="px-3 py-1 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSat ? 'animate-spin' : ''}`} />
+                  <span>{isFetchingSat ? 'QUERYING CDSE...' : 'FETCH LIVE SENTINEL PASS'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="bg-[#242424] p-3 rounded-lg border border-[#383838] space-y-1">
+                <span className="text-slate-400 block font-semibold">Spectral NDVI Status:</span>
+                <span className={`font-mono font-bold text-sm ${effectiveNdvi ? 'text-emerald-400' : isHardscape ? 'text-slate-400' : 'text-amber-400'}`}>
+                  {effectiveNdvi ? `${Number(effectiveNdvi).toFixed(4)} (Verified)` : isHardscape ? 'N/A (Industrial Hardscape)' : 'Pending Pass (5-Day Orbit Window)'}
+                </span>
+              </div>
+              <div className="bg-[#242424] p-3 rounded-lg border border-[#383838] space-y-1">
+                <span className="text-slate-400 block font-semibold">Classified Landcover / Biomass:</span>
+                <span className="font-semibold text-slate-200 block text-xs">
+                  {effectiveLandcover}
+                </span>
+              </div>
+            </div>
+
+            {satMsg && (
+              <div className="p-2.5 bg-cyan-950/40 border border-cyan-800/40 rounded-lg text-xs text-cyan-300 flex items-center gap-2 font-medium">
+                <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>{satMsg}</span>
+              </div>
+            )}
           </div>
 
           {/* Recommended Action Protocol */}
