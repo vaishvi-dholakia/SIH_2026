@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
@@ -71,12 +72,12 @@ def get_temporal_status(db: Session = Depends(get_db)):
 
 @router.post("/backfill")
 async def trigger_manual_backfill(
-    force: bool = Query(False, description="Force override existing records and re-process 60-day NASA archive"),
-    limit: int = Query(500, description="Maximum number of historical records to process"),
+    force: bool = Query(False, description="Force override existing records and re-process 30-day NASA archive"),
+    limit: Optional[int] = Query(None, description="Maximum number of historical records to process (default: None for full archive)"),
     db: Session = Depends(get_db)
 ):
     """
-    Triggers clean NASA 60-day historical backfill on demand without database wipes.
+    Triggers clean NASA 30-day historical backfill on demand without database wipes.
     Supports force_override=True for clean re-evaluations during live SIH jury presentations.
     """
     result = await HistoricalBackfillService.run_backfill(db, limit=limit, force_override=force)

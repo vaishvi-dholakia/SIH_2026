@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     
     # Geospatial Parameters
     DEFAULT_SAFETY_BUFFER_KM: float = 1.0
-    HISTORICAL_DAYS_RANGE: int = 60
+    HISTORICAL_DAYS_RANGE: int = 30
     
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),

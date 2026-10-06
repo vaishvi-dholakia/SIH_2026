@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
@@ -77,7 +77,7 @@ async def websocket_alerts_endpoint(websocket: WebSocket):
         logger.warning(f"WebSocket connection error: {e}")
         ws_manager.disconnect(websocket)
 
-async def _run_backfill_task(limit: int, force: bool = False):
+async def _run_backfill_task(limit: Optional[int] = None, force: bool = False):
     """Background execution runner for backfill."""
     db = SessionLocal()
     try:
@@ -95,7 +95,7 @@ async def _run_backfill_task(limit: int, force: bool = False):
 @router.post("/api/admin/backfill")
 async def trigger_historical_backfill(
     background_tasks: BackgroundTasks,
-    limit: int = 500,
+    limit: Optional[int] = None,
     force: bool = False,
     db: Session = Depends(get_db)
 ):
@@ -106,5 +106,5 @@ async def trigger_historical_backfill(
     background_tasks.add_task(_run_backfill_task, limit, force)
     return {
         "status": "initiated",
-        "message": f"Historical NASA FIRMS backfill initiated in background (limit: {limit} records, force: {force})."
+        "message": f"Historical NASA FIRMS backfill initiated in background (limit: {limit or 'full'}, force: {force})."
     }

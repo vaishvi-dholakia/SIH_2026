@@ -109,29 +109,40 @@ async def ensure_live_osm_data():
             rec_min = oldest_record if oldest_record.tzinfo else oldest_record.replace(tzinfo=timezone.utc)
             date_span_days = max(0, (rec_max - rec_min).days)
 
+        # Check for un-calculated vegetation NDVI in existing DB rows
+        null_veg_count = db.query(func.count(ActiveHotspot.id)).filter(
+            ActiveHotspot.classification.in_(["Agricultural / Stubble Burning", "Forest Fire / Wildfire"]),
+            ActiveHotspot.ndvi.is_(None)
+        ).scalar() or 0
+
         # Condition for Triggering Automatic Backfill:
-        # 1. Total rows < 100 OR
-        # 2. Distinct calendar days < 20 OR
+        # Full 30 days of authentic FIRMS for India typically has >10,000 records across >= 25 calendar days.
+        # Triggers if:
+        # 1. Total rows < 10000 (fresh DB, 1-2 rows dummy, or partial backfill) OR
+        # 2. Distinct calendar days < 25 OR
         # 3. Date span < 25 days OR
-        # 4. Latest record is stale (>24h old)
-        insufficient_depth = (total_rows < 100) or (distinct_days < 20) or (date_span_days < 25)
+        # 4. Latest record is stale (>24h old) OR
+        # 5. Any vegetation hotspot has NULL NDVI
+        insufficient_depth = (total_rows < 10000) or (distinct_days < 25) or (date_span_days < 25) or (null_veg_count > 0)
 
         if insufficient_depth or is_stale:
             trigger_reasons = []
-            if total_rows < 100:
-                trigger_reasons.append(f"total rows low ({total_rows} < 100)")
-            if distinct_days < 20:
-                trigger_reasons.append(f"temporal depth insufficient ({distinct_days} distinct days < 20)")
+            if total_rows < 10000:
+                trigger_reasons.append(f"total rows low ({total_rows} < 10000)")
+            if distinct_days < 25:
+                trigger_reasons.append(f"temporal depth insufficient ({distinct_days} distinct days < 25)")
             if date_span_days < 25:
                 trigger_reasons.append(f"date span too narrow ({date_span_days} days < 25)")
+            if null_veg_count > 0:
+                trigger_reasons.append(f"{null_veg_count} vegetation records missing NDVI")
             if is_stale:
                 trigger_reasons.append("latest telemetry >24h stale")
 
             logger.info(
-                f"[COLD START] Temporal depth validation triggered NASA 60-day backfill: {', '.join(trigger_reasons)}."
+                f"[COLD START] Temporal depth validation triggered NASA 30-day backfill: {', '.join(trigger_reasons)}."
             )
             from app.services.historical_backfill import HistoricalBackfillService
-            await HistoricalBackfillService.run_backfill(db, limit=1000, force_override=False)
+            await HistoricalBackfillService.run_backfill(db, limit=None, force_override=False)
 
             # If NASA open feed returned no current fires, seed initial representative hotspots across India
             if db.query(ActiveHotspot).count() == 0:

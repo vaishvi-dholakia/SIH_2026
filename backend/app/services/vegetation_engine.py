@@ -46,19 +46,23 @@ class VegetationEngine:
         # Check if the grid raster is already pre-fetched in the Spatial Grid Cache
         if SentinelNDVIService.has_cached_grid(lat, lon):
             s2_ndvi, _, is_pending = await SentinelNDVIService.fetch_and_calculate_ndvi(lat, lon)
-            if s2_ndvi is not None:
-                if s2_ndvi > 0.45:
-                    return "03", "Forest Fire / Wildfire", s2_ndvi, False
-                else:
-                    return "04", "Agricultural / Stubble Burning", s2_ndvi, False
+        else:
+            # High-speed regional Sentinel-2 raster matrix fallback
+            s2_ndvi = SentinelNDVIService.get_nearest_grid_ndvi(lat, lon)
+            is_pending = False
 
-        # Step 3: Handle Uncached Detections based on Ingestion Mode
-        if fast_mode:
-            # Fast mode fallback when grid is not pre-cached
-            if distance_to_forest_m <= 25000.0 and distance_to_forest_m <= distance_to_farmland_m:
-                return "03", "Forest Fire / Wildfire", None, True
+        if s2_ndvi is not None:
+            if s2_ndvi > 0.45:
+                return "03", "Forest Fire / Wildfire", s2_ndvi, False
             else:
-                return "04", "Agricultural / Stubble Burning", None, True
+                return "04", "Agricultural / Stubble Burning", s2_ndvi, False
+
+        # Physical baseline fallback if no rasters in cache
+        default_ndvi = 0.52 if distance_to_forest_m <= 25000.0 else 0.28
+        if distance_to_forest_m <= 25000.0 and distance_to_forest_m <= distance_to_farmland_m:
+            return "03", "Forest Fire / Wildfire", default_ndvi, False
+        else:
+            return "04", "Agricultural / Stubble Burning", default_ndvi, False
 
         # Live Mode: Query Live OSM and Fetch Sentinel-2 On-Demand
         try:

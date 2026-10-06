@@ -3,7 +3,7 @@ import csv
 import io
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import httpx
 from sqlalchemy.orm import Session
 from app.config import settings
@@ -38,9 +38,10 @@ class HistoricalBackfillService:
         async with httpx.AsyncClient(timeout=60.0) as client:
             if map_key and len(map_key) > 5 and map_key != "YOUR_NASA_FIRMS_MAP_KEY_HERE":
                 bbox_str = f"{int(BBOX_WEST)},{int(BBOX_SOUTH)},{int(BBOX_EAST)},{int(BBOX_NORTH)}"
-                target_days = min(days, 30)
+                target_days = days or 30
                 today = datetime.now(timezone.utc).date()
-                for day_offset in range(0, target_days, 5):
+                cutoff_date = today - timedelta(days=target_days)
+                for day_offset in range(0, target_days + 1, 5):
                     chunk_date = today - timedelta(days=day_offset)
                     date_str = chunk_date.strftime("%Y-%m-%d")
                     for src in ["VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT"]:
@@ -53,6 +54,9 @@ class HistoricalBackfillService:
                         except Exception as e:
                             logger.error(f"Error fetching keyed API {src} for date {date_str}: {e}")
             else:
+                target_days = days or 30
+                today = datetime.now(timezone.utc).date()
+                cutoff_date = today - timedelta(days=target_days)
                 # NASA official public South Asia multi-day feeds across all orbiting satellites
                 logger.info("Using NASA FIRMS official multi-day South Asia open archive feeds...")
                 urls = [
@@ -76,21 +80,25 @@ class HistoricalBackfillService:
             recs = FIRMSFetcher.parse_firms_csv(chunk)
             all_records.extend(recs)
 
-        # Filter strictly inside Indian Sovereign Territory
+        # Filter strictly inside Indian Sovereign Territory and strictly within the last target_days
         from app.services.india_boundary import is_point_in_india
         unique_map = {}
         for r in all_records:
             if is_point_in_india(r["latitude"], r["longitude"]):
+                # Temporal cutoff guard: discard records older than target_days
+                rec_date = r["detected_at"].date() if hasattr(r["detected_at"], "date") else r["detected_at"]
+                if rec_date < cutoff_date:
+                    continue
                 key = (round(r["latitude"], 4), round(r["longitude"], 4), r["detected_at"])
                 if key not in unique_map:
                     unique_map[key] = r
 
         sorted_records = sorted(unique_map.values(), key=lambda x: x["detected_at"])
-        logger.info(f"Loaded {len(sorted_records)} unique authentic historical detections inside India.")
+        logger.info(f"Loaded {len(sorted_records)} unique authentic historical detections inside India (strictly last {target_days} days).")
         return sorted_records
 
     @classmethod
-    async def run_backfill(cls, db: Session, limit: int = 1000, force_override: bool = False) -> Dict[str, Any]:
+    async def run_backfill(cls, db: Session, limit: Optional[int] = None, force_override: bool = False) -> Dict[str, Any]:
         """
         Runs historical detections chronologically through the full pipeline:
         Spatial Analysis -> Suppression -> Spatial Grid NDVI -> Dual ML -> Batch Upsert
@@ -117,8 +125,8 @@ class HistoricalBackfillService:
                 except Exception:
                     c_lat, c_lon = 22.355, 69.865
 
-                # Generate multi-pass historical passes across 60 days
-                for day_offset in range(1, 60):
+                # Generate multi-pass historical passes across historical window
+                for day_offset in range(1, settings.HISTORICAL_DAYS_RANGE):
                     det_time = now_utc - timedelta(days=day_offset, hours=(ref.id * 3) % 24)
                     base_frp = round(14.0 + (ref.id % 5) * 2.5 + ((day_offset % 7) - 3) * 0.8, 1)
                     flare_record = {
@@ -166,17 +174,17 @@ class HistoricalBackfillService:
             )
             await SentinelNDVIService.prefetch_spatial_grids(veg_coords)
 
-        # Batch ingestion with commit every 200 records for maximum performance & live progress
+        # Batch ingestion with commit every 500 records for maximum performance & live progress
         for i, r in enumerate(selected_records):
             try:
                 await FIRMSFetcher.process_and_ingest_hotspot(
                     r, db, ws_broadcast_callback=None, geofence_cache=geofence_cache, commit=False, fast_mode=True
                 )
                 processed_count += 1
-                if processed_count % 200 == 0:
+                if processed_count % 500 == 0:
                     try:
                         db.commit()
-                        logger.info(f"Committed batch of 200 hotspots ({processed_count}/{len(selected_records)})...")
+                        logger.info(f"Committed batch of 500 hotspots ({processed_count}/{len(selected_records)})...")
                     except Exception as commit_err:
                         db.rollback()
                         logger.warning(f"Batch commit warning: {commit_err}")
@@ -187,6 +195,19 @@ class HistoricalBackfillService:
 
         db.commit()
         logger.info(f"Successfully processed and committed {processed_count} hotspots into database.")
+
+        # Ensure 0 vegetation records have NULL NDVI (auto-repair any uncached/legacy records)
+        null_veg = db.query(ActiveHotspot).filter(
+            ActiveHotspot.classification.in_(["Agricultural / Stubble Burning", "Forest Fire / Wildfire"]),
+            ActiveHotspot.ndvi.is_(None)
+        ).all()
+        if null_veg:
+            logger.info(f"[NDVI REPAIR] Fixing {len(null_veg)} vegetation hotspots with missing NDVI...")
+            for r in null_veg:
+                r.ndvi = SentinelNDVIService.get_nearest_grid_ndvi(r.latitude, r.longitude)
+                r.ndvi_pending = False
+            db.commit()
+            logger.info("[NDVI REPAIR] All missing vegetation NDVIs successfully repaired.")
 
         # Update SuppressionHistory baseline stats for registered refineries
         try:
