@@ -172,7 +172,7 @@ class HistoricalBackfillService:
                 f"[SPATIAL CLUSTERING] Pre-fetching authentic Copernicus Sentinel-2 rasters for "
                 f"{len(veg_coords)} vegetation candidates across India..."
             )
-            await SentinelNDVIService.prefetch_spatial_grids(veg_coords)
+            await SentinelNDVIService.prefetch_spatial_grids(veg_coords, max_grids=120)
 
         # Batch ingestion with commit every 500 records for maximum performance & live progress
         for i, r in enumerate(selected_records):

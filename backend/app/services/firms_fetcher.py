@@ -498,7 +498,7 @@ class FIRMSFetcher:
         geofence_cache = SpatialAnalyser.get_cached_geofences(db)
         count = 0
         for i, raw in enumerate(sorted_fires):
-            res = await cls.process_and_ingest_hotspot(raw, db, ws_broadcast_callback, geofence_cache=geofence_cache)
+            res = await cls.process_and_ingest_hotspot(raw, db, ws_broadcast_callback, geofence_cache=geofence_cache, fast_mode=True)
             if res:
                 count += 1
             if i % 100 == 0:
